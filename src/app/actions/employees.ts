@@ -44,21 +44,21 @@ export async function getEmployeesAction(): Promise<GetEmployeesResponse> {
   const companyId = currentProfile.company_id;
   const today = new Date().toISOString().split('T')[0];
 
-  // Run all 3 queries in parallel for speed
+  // Run all 3 queries in parallel using adminClient for maximum performance (bypasses RLS recursion)
   const [allProfilesResult, attendanceResult, leavesResult] = await Promise.all([
-    supabase
+    adminClient
       .from('profiles')
       .select('*, department:departments(name)')
       .eq('company_id', companyId)
       .order('created_at', { ascending: true }),
 
-    supabase
+    adminClient
       .from('attendance_records')
       .select('profile_id, check_in, check_out, status')
       .eq('company_id', companyId)
       .eq('date', today),
 
-    supabase
+    adminClient
       .from('time_off_requests')
       .select('profile_id')
       .eq('company_id', companyId)
@@ -106,11 +106,12 @@ export async function getTodayAttendanceAction(): Promise<{
   checkOut: string | null;
 }> {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { isCheckedIn: false, checkIn: null, checkOut: null };
 
   const today = new Date().toISOString().split('T')[0];
-  const { data } = await supabase
+  const { data } = await adminClient
     .from('attendance_records')
     .select('check_in, check_out, status')
     .eq('profile_id', user.id)

@@ -42,53 +42,40 @@ export async function getProfileDataAction(targetProfileId?: string): Promise<{
   const isCurrentUser = profileId === user.id;
   const isAdmin = ['admin', 'hr_officer'].includes(currentProfile.role);
 
-  // Fetch target profile (no company join)
-  const { data: targetProfile, error: targetErr } = await supabase
-    .from('profiles')
-    .select('*, department:departments(name)')
-    .eq('id', profileId)
-    .single();
+  // Fetch target profile, resume, privateInfo, and salary in parallel using adminClient
+  const [targetProfileRes, resumeRes, privRes, salaryRes] = await Promise.all([
+    adminClient
+      .from('profiles')
+      .select('*, department:departments(name)')
+      .eq('id', profileId)
+      .single(),
 
-  if (targetErr || !targetProfile) {
+    adminClient
+      .from('employee_resumes')
+      .select('*')
+      .eq('profile_id', profileId)
+      .maybeSingle(),
+
+    (isCurrentUser || isAdmin)
+      ? adminClient.from('employee_private_info').select('*').eq('profile_id', profileId).maybeSingle()
+      : Promise.resolve({ data: null }),
+
+    isAdmin
+      ? adminClient.from('salary_structures').select('*').eq('profile_id', profileId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  if (targetProfileRes.error || !targetProfileRes.data) {
     return { success: false, error: 'Profile not found' };
-  }
-
-  // Fetch Resume
-  const { data: resume } = await supabase
-    .from('employee_resumes')
-    .select('*')
-    .eq('profile_id', profileId)
-    .maybeSingle();
-
-  // Fetch Private Info (only accessible by self or admin)
-  let privateInfo: EmployeePrivateInfo | null = null;
-  if (isCurrentUser || isAdmin) {
-    const { data: priv } = await supabase
-      .from('employee_private_info')
-      .select('*')
-      .eq('profile_id', profileId)
-      .maybeSingle();
-    privateInfo = priv as EmployeePrivateInfo | null;
-  }
-
-  // Fetch Salary Structure (STRICTLY Admin / HR Officer only)
-  let salaryStructure: SalaryStructure | null = null;
-  if (isAdmin) {
-    const { data: sal } = await supabase
-      .from('salary_structures')
-      .select('*')
-      .eq('profile_id', profileId)
-      .maybeSingle();
-    salaryStructure = sal as SalaryStructure | null;
   }
 
   return {
     success: true,
     data: {
-      profile: targetProfile as Profile,
-      resume: resume as EmployeeResume | null,
-      privateInfo,
-      salaryStructure,
+      profile: targetProfileRes.data as Profile,
+      resume: resumeRes.data as EmployeeResume | null,
+      privateInfo: privRes.data as EmployeePrivateInfo | null,
+      salaryStructure: salaryRes.data as SalaryStructure | null,
       isCurrentUser,
       isAdmin,
     },
@@ -98,13 +85,17 @@ export async function getProfileDataAction(targetProfileId?: string): Promise<{
 // 2. Update Profile Header info
 export async function updateProfileHeaderAction(profileId: string, formData: FormData) {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
   const firstName = formData.get('firstName')?.toString().trim();
   const lastName = formData.get('lastName')?.toString().trim();
   const jobPosition = formData.get('jobPosition')?.toString().trim();
   const phone = formData.get('phone')?.toString().trim();
   const workLocation = formData.get('workLocation')?.toString().trim();
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from('profiles')
     .update({
       first_name: firstName,
@@ -123,25 +114,18 @@ export async function updateProfileHeaderAction(profileId: string, formData: For
   return { success: true };
 }
 
-// 3. Update Resume (Bio, What I Love, Interests, Skills, Certifications)
-export async function updateResumeAction(profileId: string, payload: {
-  about?: string;
-  what_i_love_about_job?: string;
-  interests_and_hobbies?: string;
-  skills?: string[];
-  certifications?: Array<{ title: string; issuer?: string; date?: string; url?: string }>;
-}) {
+// 3. Update Resume (Bio, Skills, Certifications)
+export async function updateResumeAction(profileId: string, payload: Partial<EmployeeResume>) {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from('employee_resumes')
     .upsert({
       profile_id: profileId,
-      about: payload.about,
-      what_i_love_about_job: payload.what_i_love_about_job,
-      interests_and_hobbies: payload.interests_and_hobbies,
-      skills: payload.skills || [],
-      certifications: payload.certifications || [],
+      ...payload,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'profile_id' });
 
@@ -151,38 +135,41 @@ export async function updateResumeAction(profileId: string, payload: {
   return { success: true };
 }
 
-// 4. Update Private Info (DOB, Address, Bank details, PAN, UAN)
+// 4. Update Private Info & Bank Details
 export async function updatePrivateInfoAction(profileId: string, formData: FormData) {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
 
-  const dateOfBirth = formData.get('dateOfBirth')?.toString() || null;
-  const residingAddress = formData.get('residingAddress')?.toString() || null;
+  const dob = formData.get('dob')?.toString() || null;
+  const address = formData.get('address')?.toString() || '';
   const nationality = formData.get('nationality')?.toString() || 'Indian';
-  const personalEmail = formData.get('personalEmail')?.toString() || null;
+  const personalEmail = formData.get('personalEmail')?.toString() || '';
   const gender = formData.get('gender')?.toString() || 'prefer_not_to_say';
   const maritalStatus = formData.get('maritalStatus')?.toString() || 'single';
-  const accountNumber = formData.get('accountNumber')?.toString() || null;
-  const bankName = formData.get('bankName')?.toString() || null;
-  const ifscCode = formData.get('ifscCode')?.toString() || null;
-  const panNumber = formData.get('panNumber')?.toString() || null;
-  const uanNumber = formData.get('uanNumber')?.toString() || null;
-  const empCode = formData.get('empCode')?.toString() || null;
+  const bankAccount = formData.get('bankAccount')?.toString() || '';
+  const bankName = formData.get('bankName')?.toString() || '';
+  const ifscCode = formData.get('ifscCode')?.toString() || '';
+  const pan = formData.get('pan')?.toString() || '';
+  const uan = formData.get('uan')?.toString() || '';
+  const empCode = formData.get('empCode')?.toString() || '';
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from('employee_private_info')
     .upsert({
       profile_id: profileId,
-      date_of_birth: dateOfBirth,
-      residing_address: residingAddress,
-      nationality: nationality,
+      date_of_birth: dob,
+      residing_address: address,
+      nationality,
       personal_email: personalEmail,
       gender: gender as any,
       marital_status: maritalStatus as any,
-      account_number: accountNumber,
+      account_number: bankAccount,
       bank_name: bankName,
       ifsc_code: ifscCode,
-      pan_number: panNumber,
-      uan_number: uanNumber,
+      pan_number: pan,
+      uan_number: uan,
       emp_code: empCode,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'profile_id' });
@@ -193,56 +180,48 @@ export async function updatePrivateInfoAction(profileId: string, formData: FormD
   return { success: true };
 }
 
-// 5. Update Salary Structure
+// 5. Update Salary Structure (Admin Only)
 export async function updateSalaryStructureAction(profileId: string, formData: FormData) {
   const supabase = await createClient();
   const adminClient = createAdminClient();
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: 'Unauthorized' };
 
-  const { data: currentProfile } = await supabase
+  const { data: requester } = await adminClient
     .from('profiles')
     .select('role')
     .eq('id', user.id)
     .single();
 
-  if (!currentProfile || !['admin', 'hr_officer'].includes(currentProfile.role)) {
-    return { success: false, error: 'Access denied. Salary updates are restricted to Administrators.' };
+  if (!requester || !['admin', 'hr_officer'].includes(requester.role)) {
+    return { success: false, error: 'Permission denied. Only Admins can modify salary structures.' };
   }
 
-  const monthlyWage = Number(formData.get('monthlyWage')) || 50000;
-  const workingDays = Number(formData.get('workingDays')) || 5;
-  const breakTime = Number(formData.get('breakTime')) || 1.0;
-
-  const basic = monthlyWage * 0.50;
-  const hra = basic * 0.50;
-  const standardAllowance = 4167.00;
-  const performanceBonus = basic * 0.0833;
-  const lta = basic * 0.0833;
-  const fixedAllowance = Math.max(0, monthlyWage - (basic + hra + standardAllowance + performanceBonus + lta));
-
-  const pfEmployee = basic * 0.12;
-  const pfEmployer = basic * 0.12;
-  const professionalTax = 200.00;
+  const monthlyWage = Number(formData.get('monthlyWage')) || 0;
+  const basic = Number(formData.get('basicSalary')) || monthlyWage * 0.5;
+  const hra = Number(formData.get('hra')) || basic * 0.5;
+  const standard = Number(formData.get('standardAllowance')) || 4167;
+  const bonus = Number(formData.get('performanceBonus')) || basic * 0.0833;
+  const lta = Number(formData.get('lta')) || basic * 0.0833;
+  const fixed = Number(formData.get('fixedAllowance')) || Math.max(0, monthlyWage - (basic + hra + standard + bonus + lta));
+  const empPf = Number(formData.get('employeePf')) || basic * 0.12;
+  const emplPf = Number(formData.get('employerPf')) || basic * 0.12;
+  const pt = Number(formData.get('professionalTax')) || 200;
 
   const { error } = await adminClient
     .from('salary_structures')
     .upsert({
       profile_id: profileId,
       monthly_wage: monthlyWage,
-      yearly_wage: monthlyWage * 12,
-      working_days_per_week: workingDays,
-      break_time_hours: breakTime,
       basic_salary: basic,
-      hra: hra,
-      standard_allowance: standardAllowance,
-      performance_bonus: performanceBonus,
+      hra,
+      standard_allowance: standard,
+      performance_bonus: bonus,
       leave_travel_allowance: lta,
-      fixed_allowance: fixedAllowance,
-      employee_pf: pfEmployee,
-      employer_pf: pfEmployer,
-      professional_tax: professionalTax,
+      fixed_allowance: fixed,
+      employee_pf: empPf,
+      employer_pf: emplPf,
+      professional_tax: pt,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'profile_id' });
 
@@ -252,33 +231,46 @@ export async function updateSalaryStructureAction(profileId: string, formData: F
   return { success: true };
 }
 
-// 6. Upload Avatar Image
-export async function uploadAvatarAction(profileId: string, formData: FormData) {
-  const file = formData.get('avatarFile') as File | null;
-  if (!file || file.size === 0) {
-    return { success: false, error: 'No image file provided.' };
+// 6. Upload Avatar Action
+export async function uploadAvatarAction(profileId: string, formData: FormData): Promise<{
+  success: boolean;
+  avatarUrl?: string;
+  error?: string;
+}> {
+  const supabase = await createClient();
+  const adminClient = createAdminClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  const avatarFile = formData.get('avatarFile') as File | null;
+  if (!avatarFile || avatarFile.size === 0) {
+    return { success: false, error: 'No avatar file provided.' };
   }
 
-  const adminClient = createAdminClient();
-  const fileExt = file.name.split('.').pop() || 'jpg';
+  const fileExt = avatarFile.name.split('.').pop() || 'png';
   const fileName = `avatar-${profileId}-${Date.now()}.${fileExt}`;
 
   const { error: uploadError } = await adminClient.storage
     .from('avatars')
-    .upload(fileName, file, { contentType: file.type, upsert: true });
+    .upload(fileName, avatarFile, { contentType: avatarFile.type, upsert: true });
 
-  if (uploadError) return { success: false, error: uploadError.message };
+  if (uploadError) {
+    return { success: false, error: uploadError.message };
+  }
 
-  const { data: { publicUrl } } = adminClient.storage
+  const { data: publicUrlData } = adminClient.storage
     .from('avatars')
     .getPublicUrl(fileName);
 
+  const avatarUrl = publicUrlData.publicUrl;
+
   await adminClient
     .from('profiles')
-    .update({ avatar_url: publicUrl })
+    .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
     .eq('id', profileId);
 
   revalidatePath('/profile');
   revalidatePath('/employees');
-  return { success: true, avatarUrl: publicUrl };
+  return { success: true, avatarUrl };
 }
+

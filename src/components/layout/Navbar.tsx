@@ -42,9 +42,14 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // If no initialProfile, fetch profile via client (no company join to avoid RLS issues)
+  // Sync profile when parent passes it
   useEffect(() => {
-    if (initialProfile) return; // already have profile from server
+    if (initialProfile) setProfile(initialProfile);
+  }, [initialProfile]);
+
+  // If no initialProfile, fetch profile via client only once
+  useEffect(() => {
+    if (initialProfile || profile) return;
     async function loadProfile() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -58,7 +63,6 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
 
         if (prof) setProfile(prof as Profile);
 
-        // Use a simple filter - no .single() which causes 406
         const today = new Date().toISOString().split('T')[0];
         const { data: attRows } = await supabase
           .from('attendance_records')
@@ -70,11 +74,11 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
         const att = attRows?.[0];
         setIsCheckedIn(!!(att?.check_in && !att?.check_out));
       } catch {
-        // Silently fail — user can still use the app
+        // Silently fail
       }
     }
     loadProfile();
-  }, []);
+  }, [initialProfile]);
 
   // Handle Punch In / Punch Out via server actions
   async function handleToggleAttendance() {

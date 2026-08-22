@@ -30,6 +30,7 @@ export interface AttendanceResponse {
 // 1. Fetch Attendance Data (Admin Daily Ledger OR Employee Monthly Ledger)
 export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'day' | 'month' = 'day'): Promise<AttendanceResponse> {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -45,8 +46,7 @@ export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'd
     };
   }
 
-  // Use adminClient (service role) to bypass RLS for identity check
-  const adminClient = createAdminClient();
+  // Use adminClient for fast profile lookup
   const { data: currentProfile, error: profErr } = await adminClient
     .from('profiles')
     .select('*, department:departments(name)')
@@ -73,43 +73,48 @@ export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'd
   const companyId = currentProfile.company_id;
 
   // 1. Fetch current user's today record
-  const { data: todayRec } = await supabase
+  const { data: todayRec } = await adminClient
     .from('attendance_records')
     .select('*')
     .eq('profile_id', user.id)
     .eq('date', todayStr)
     .maybeSingle();
 
-  // 2. If Admin viewing 'day' mode: Fetch all employees and their records for activeDate
+  // 2. If Admin viewing 'day' mode: Fetch all employees and their records for activeDate in parallel
   if (isAdmin && viewMode === 'day') {
-    const { data: allProfiles } = await supabase
-      .from('profiles')
-      .select('*, department:departments(*)')
-      .eq('company_id', companyId)
-      .order('first_name', { ascending: true });
+    const [profilesRes, attendanceRes, leavesRes] = await Promise.all([
+      adminClient
+        .from('profiles')
+        .select('*, department:departments(*)')
+        .eq('company_id', companyId)
+        .order('first_name', { ascending: true }),
 
-    const { data: dateAttendance } = await supabase
-      .from('attendance_records')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('date', activeDate);
+      adminClient
+        .from('attendance_records')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('date', activeDate),
 
-    // Active approved leaves on that date
-    const { data: dateLeaves } = await supabase
-      .from('time_off_requests')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('status', 'approved')
-      .lte('start_date', activeDate)
-      .gte('end_date', activeDate);
+      adminClient
+        .from('time_off_requests')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('status', 'approved')
+        .lte('start_date', activeDate)
+        .gte('end_date', activeDate),
+    ]);
+
+    const allProfiles = profilesRes.data || [];
+    const dateAttendance = attendanceRes.data || [];
+    const dateLeaves = leavesRes.data || [];
 
     const attMap = new Map<string, AttendanceRecord>();
-    dateAttendance?.forEach((rec) => attMap.set(rec.profile_id, rec as AttendanceRecord));
+    dateAttendance.forEach((rec) => attMap.set(rec.profile_id, rec as AttendanceRecord));
 
     const leaveSet = new Set<string>();
-    dateLeaves?.forEach((l) => leaveSet.add(l.profile_id));
+    dateLeaves.forEach((l) => leaveSet.add(l.profile_id));
 
-    const adminRows: AdminAttendanceRow[] = (allProfiles || []).map((prof) => {
+    const adminRows: AdminAttendanceRow[] = allProfiles.map((prof) => {
       const att = attMap.get(prof.id) || null;
       let status: AttendanceStatus = 'absent';
       if (att) {
@@ -138,7 +143,7 @@ export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'd
       stats: {
         daysPresent: presentCount,
         leavesCount: leaveCount,
-        totalWorkingDays: (allProfiles || []).length,
+        totalWorkingDays: allProfiles.length,
       },
       todayRecord: todayRec as AttendanceRecord | null,
     };
@@ -150,30 +155,33 @@ export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'd
     .toISOString()
     .split('T')[0];
 
-  // Fetch monthly records for current user
-  const { data: monthlyRecords } = await supabase
-    .from('attendance_records')
-    .select('*')
-    .eq('profile_id', user.id)
-    .gte('date', monthStart)
-    .lt('date', nextMonth)
-    .order('date', { ascending: false });
+  const [monthlyRecordsRes, monthlyLeavesRes] = await Promise.all([
+    adminClient
+      .from('attendance_records')
+      .select('*')
+      .eq('profile_id', user.id)
+      .gte('date', monthStart)
+      .lt('date', nextMonth)
+      .order('date', { ascending: false }),
 
-  // Fetch monthly leaves for current user
-  const { data: monthlyLeaves } = await supabase
-    .from('time_off_requests')
-    .select('*')
-    .eq('profile_id', user.id)
-    .eq('status', 'approved')
-    .gte('end_date', monthStart)
-    .lte('start_date', nextMonth);
+    adminClient
+      .from('time_off_requests')
+      .select('*')
+      .eq('profile_id', user.id)
+      .eq('status', 'approved')
+      .gte('end_date', monthStart)
+      .lte('start_date', nextMonth),
+  ]);
+
+  const monthlyRecords = monthlyRecordsRes.data || [];
+  const monthlyLeaves = monthlyLeavesRes.data || [];
 
   let leavesCount = 0;
-  monthlyLeaves?.forEach((l) => {
+  monthlyLeaves.forEach((l) => {
     leavesCount += l.allocation_days || 1;
   });
 
-  const daysPresent = (monthlyRecords || []).filter(
+  const daysPresent = monthlyRecords.filter(
     (r) => r.status === 'present' || r.status === 'half_day'
   ).length;
 
@@ -192,7 +200,7 @@ export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'd
     isAdmin,
     activeDate,
     activeMonth,
-    employeeRecords: (monthlyRecords || []) as AttendanceRecord[],
+    employeeRecords: monthlyRecords as AttendanceRecord[],
     stats: {
       daysPresent,
       leavesCount,
@@ -205,10 +213,11 @@ export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'd
 // 2. Punch In Action
 export async function punchInAction() {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: 'Unauthorized' };
 
-  const { data: profile } = await supabase
+  const { data: profile } = await adminClient
     .from('profiles')
     .select('company_id')
     .eq('id', user.id)
@@ -219,7 +228,7 @@ export async function punchInAction() {
   const today = new Date().toISOString().split('T')[0];
   const now = new Date().toISOString();
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from('attendance_records')
     .upsert({
       company_id: profile.company_id,
@@ -239,14 +248,14 @@ export async function punchInAction() {
 // 3. Punch Out Action
 export async function punchOutAction() {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: 'Unauthorized' };
 
   const today = new Date().toISOString().split('T')[0];
   const now = new Date().toISOString();
 
-  // Update check_out (triggers automatic work_hours and extra_hours calculation in Postgres)
-  const { error } = await supabase
+  const { error } = await adminClient
     .from('attendance_records')
     .update({
       check_out: now,
