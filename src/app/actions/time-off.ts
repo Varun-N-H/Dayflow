@@ -37,8 +37,9 @@ export async function getTimeOffDataAction(year = new Date().getFullYear()): Pro
     };
   }
 
-  // Get current user profile (no company join)
-  const { data: currentProfile, error: profErr } = await supabase
+  // Use adminClient (service role) to bypass RLS for identity check
+  const adminClient = createAdminClient();
+  const { data: currentProfile, error: profErr } = await adminClient
     .from('profiles')
     .select('*, department:departments(name)')
     .eq('id', user.id)

@@ -20,21 +20,25 @@ export interface GetEmployeesResponse {
 // 1. Fetch all company employees with live availability status
 export async function getEmployeesAction(): Promise<GetEmployeesResponse> {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
     return { success: false, employees: [], currentUserProfile: null, error: 'Unauthorized' };
   }
 
-  // Fetch current user's profile (no company join – avoids RLS join 500)
-  const { data: currentProfile, error: profileErr } = await supabase
+  // Use adminClient (service role) to bypass RLS for the identity check
+  // This is safe — we already verified the user is authenticated above
+  const { data: currentProfile, error: profileErr } = await adminClient
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single();
 
   if (profileErr || !currentProfile) {
-    return { success: false, employees: [], currentUserProfile: null, error: 'Profile not found' };
+    const detail = profileErr ? `${profileErr.code}: ${profileErr.message}` : 'No row returned';
+    console.error('[getEmployeesAction] profile fetch failed for uid:', user.id, '|', detail);
+    return { success: false, employees: [], currentUserProfile: null, error: `Profile not found (${detail})` };
   }
 
   const companyId = currentProfile.company_id;

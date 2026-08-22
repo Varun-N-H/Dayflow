@@ -169,10 +169,22 @@ export async function signUpCompanyAction(formData: FormData): Promise<AuthRespo
       });
 
     if (profileError) {
-      console.error('Profile insertion error:', profileError);
+      // Rollback: delete the auth user so they can retry cleanly
+      await adminClient.auth.admin.deleteUser(authData.user.id);
+      return { success: false, error: `Profile setup failed: ${profileError.message}. Please try signing up again.` };
     }
 
-    // 5. Sign the user in directly
+    // 5. Create initial time-off allocation for this admin
+    const currentYear = new Date().getFullYear();
+    await adminClient.from('time_off_allocations').upsert({
+      company_id: company.id,
+      profile_id: authData.user.id,
+      year: currentYear,
+      paid_time_off_allocated: 24,
+      sick_leave_allocated: 7,
+    }, { onConflict: 'profile_id,year' });
+
+    // 6. Sign the user in directly
     await supabase.auth.signInWithPassword({
       email,
       password,

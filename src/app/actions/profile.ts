@@ -20,14 +20,15 @@ export async function getProfileDataAction(targetProfileId?: string): Promise<{
   error?: string;
 }> {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
     return { success: false, error: 'Unauthorized' };
   }
 
-  // Get current user's profile (no company join to avoid RLS issues)
-  const { data: currentProfile, error: currErr } = await supabase
+  // Use adminClient (service role) to bypass RLS for identity check
+  const { data: currentProfile, error: currErr } = await adminClient
     .from('profiles')
     .select('*, department:departments(name)')
     .eq('id', user.id)
