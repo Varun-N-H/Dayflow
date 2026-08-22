@@ -7,8 +7,11 @@ import { signUpCompanyAction } from '@/app/actions/auth';
 import { Eye, EyeOff, Sparkles, Upload, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
+import { useLoading } from '@/components/layout/TopProgressBar';
+
 export default function SignUpPage() {
   const router = useRouter();
+  const { startLoading, stopLoading } = useLoading();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [companyName, setCompanyName] = useState('');
@@ -48,19 +51,27 @@ export default function SignUpPage() {
     }
 
     setLoading(true);
-    const formData = new FormData(e.currentTarget);
-    if (selectedFile) {
-      formData.set('logoFile', selectedFile);
-    }
+    startLoading();
 
-    const res = await signUpCompanyAction(formData);
-    setLoading(false);
+    try {
+      const formData = new FormData(e.currentTarget);
+      if (selectedFile) {
+        formData.set('logoFile', selectedFile);
+      }
 
-    if (!res.success) {
-      setError(res.error || 'Company registration failed. Please try again.');
-    } else if (res.redirectTo) {
-      router.push(res.redirectTo);
-      router.refresh();
+      const res = await signUpCompanyAction(formData);
+      setLoading(false);
+
+      if (!res.success) {
+        setError(res.error || 'Company registration failed. Please try again.');
+        stopLoading();
+      } else if (res.redirectTo) {
+        router.push(res.redirectTo);
+        router.refresh();
+      }
+    } catch {
+      setLoading(false);
+      stopLoading();
     }
   }
 

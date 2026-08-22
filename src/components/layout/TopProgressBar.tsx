@@ -107,6 +107,30 @@ export function LoadingProvider({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, searchParams]);
 
+  // Global internal link click listener: automatically activates progress bar on ANY link click
+  useEffect(() => {
+    function handleDocumentClick(e: MouseEvent) {
+      const anchor = (e.target as HTMLElement)?.closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+
+      // Check if this is an internal application route change
+      if (
+        href.startsWith('/') &&
+        !href.startsWith('/#') &&
+        !anchor.target &&
+        !anchor.hasAttribute('download') &&
+        href !== pathname
+      ) {
+        startLoading();
+      }
+    }
+
+    document.addEventListener('click', handleDocumentClick, { capture: true });
+    return () => document.removeEventListener('click', handleDocumentClick, { capture: true });
+  }, [pathname, startLoading]);
+
   useEffect(() => {
     globalStartLoading = startLoading;
     globalStopLoading = stopLoading;

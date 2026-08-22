@@ -7,8 +7,11 @@ import { signInAction } from '@/app/actions/auth';
 import { Eye, EyeOff, Sparkles, AlertCircle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
+import { useLoading } from '@/components/layout/TopProgressBar';
+
 export default function SignInPage() {
   const router = useRouter();
+  const { startLoading, stopLoading } = useLoading();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,16 +22,23 @@ export default function SignInPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    startLoading();
 
-    const formData = new FormData(e.currentTarget);
-    const res = await signInAction(formData);
+    try {
+      const formData = new FormData(e.currentTarget);
+      const res = await signInAction(formData);
 
-    setLoading(false);
-    if (!res.success) {
-      setError(res.error || 'Failed to sign in. Please verify your credentials.');
-    } else if (res.redirectTo) {
-      router.push(res.redirectTo);
-      router.refresh();
+      setLoading(false);
+      if (!res.success) {
+        setError(res.error || 'Failed to sign in. Please verify your credentials.');
+        stopLoading();
+      } else if (res.redirectTo) {
+        router.push(res.redirectTo);
+        router.refresh();
+      }
+    } catch {
+      setLoading(false);
+      stopLoading();
     }
   }
 
