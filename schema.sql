@@ -38,11 +38,11 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- 2. CORE MULTI-TENANT TABLES
 -- ==============================================================================
 
--- 2.1 Companies (Organizations)
+-- 2.1 Companies (Organizations) - Wireframe one.png
 CREATE TABLE IF NOT EXISTS public.companies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    company_prefix VARCHAR(4) NOT NULL, -- e.g. 'OI'
+    company_prefix VARCHAR(4) NOT NULL, -- e.g. 'OI' for Odoo India
     logo_url TEXT,
     email TEXT,
     phone TEXT,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS public.departments (
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
-    login_id VARCHAR(30) UNIQUE NOT NULL, -- Format: [OI][JODO][2026][0001]
+    login_id VARCHAR(30) UNIQUE, -- Auto-generated: [OI][JODO][2026][0001]
     role app_role NOT NULL DEFAULT 'employee',
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     is_temporary_password BOOLEAN NOT NULL DEFAULT true,
     date_of_joining DATE NOT NULL DEFAULT CURRENT_DATE,
     joining_year INT NOT NULL DEFAULT EXTRACT(YEAR FROM CURRENT_DATE)::INT,
-    serial_number INT NOT NULL,
+    serial_number INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(company_id, joining_year, serial_number)
@@ -91,9 +91,9 @@ CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 CREATE TABLE IF NOT EXISTS public.employee_resumes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     profile_id UUID UNIQUE NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    about TEXT,
-    what_i_love_about_job TEXT,
-    interests_and_hobbies TEXT,
+    about TEXT DEFAULT '',
+    what_i_love_about_job TEXT DEFAULT '',
+    interests_and_hobbies TEXT DEFAULT '',
     skills JSONB DEFAULT '[]'::JSONB,
     certifications JSONB DEFAULT '[]'::JSONB,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -104,17 +104,17 @@ CREATE TABLE IF NOT EXISTS public.employee_private_info (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     profile_id UUID UNIQUE NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     date_of_birth DATE,
-    residing_address TEXT,
+    residing_address TEXT DEFAULT '',
     nationality TEXT DEFAULT 'Indian',
-    personal_email TEXT,
-    gender gender_type,
-    marital_status marital_status_type,
-    account_number TEXT,
-    bank_name TEXT,
-    ifsc_code TEXT,
-    pan_number TEXT,
-    uan_number TEXT,
-    emp_code TEXT,
+    personal_email TEXT DEFAULT '',
+    gender gender_type DEFAULT 'prefer_not_to_say',
+    marital_status marital_status_type DEFAULT 'single',
+    account_number TEXT DEFAULT '',
+    bank_name TEXT DEFAULT '',
+    ifsc_code TEXT DEFAULT '',
+    pan_number TEXT DEFAULT '',
+    uan_number TEXT DEFAULT '',
+    emp_code TEXT DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS public.time_off_requests (
 CREATE INDEX IF NOT EXISTS idx_time_off_company ON public.time_off_requests(company_id, status);
 CREATE INDEX IF NOT EXISTS idx_time_off_profile ON public.time_off_requests(profile_id);
 
--- 2.10 Payroll Payslips
+-- 2.10 Payroll Payslips - Linkage from Attendance
 CREATE TABLE IF NOT EXISTS public.payroll_payslips (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -236,7 +236,88 @@ CREATE TABLE IF NOT EXISTS public.company_holidays (
 -- 3. STORED PROCEDURES & AUTOMATION TRIGGERS
 -- ==============================================================================
 
--- 3.1 Trigger: Auto-Compute Salary Breakdown
+-- 3.1 Trigger: Deterministic Login ID Auto-Generation
+CREATE OR REPLACE FUNCTION public.fn_generate_login_id()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_prefix VARCHAR(4);
+    v_fn_part VARCHAR(2);
+    v_ln_part VARCHAR(2);
+    v_next_serial INT;
+    v_year INT;
+BEGIN
+    -- Only generate if login_id is not already provided
+    IF NEW.login_id IS NULL OR NEW.login_id = '' THEN
+        -- Get company prefix
+        SELECT company_prefix INTO v_prefix FROM public.companies WHERE id = NEW.company_id;
+        IF v_prefix IS NULL THEN
+            v_prefix := 'CO';
+        END IF;
+
+        -- Extract name letters (minimum 2 chars with fallback)
+        v_fn_part := UPPER(SUBSTRING(REGEXP_REPLACE(NEW.first_name, '[^a-zA-Z]', '', 'g'), 1, 2));
+        IF LENGTH(v_fn_part) < 2 THEN v_fn_part := RPAD(v_fn_part, 2, 'X'); END IF;
+
+        v_ln_part := UPPER(SUBSTRING(REGEXP_REPLACE(NEW.last_name, '[^a-zA-Z]', '', 'g'), 1, 2));
+        IF LENGTH(v_ln_part) < 2 THEN v_ln_part := RPAD(v_ln_part, 2, 'X'); END IF;
+
+        v_year := EXTRACT(YEAR FROM COALESCE(NEW.date_of_joining, CURRENT_DATE))::INT;
+        NEW.joining_year := v_year;
+
+        -- Calculate next serial number for this company and year
+        SELECT COALESCE(MAX(serial_number), 0) + 1 INTO v_next_serial
+        FROM public.profiles
+        WHERE company_id = NEW.company_id AND joining_year = v_year;
+
+        NEW.serial_number := v_next_serial;
+        NEW.login_id := v_prefix || v_fn_part || v_ln_part || v_year::TEXT || LPAD(v_next_serial::TEXT, 4, '0');
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_generate_login_id ON public.profiles;
+CREATE TRIGGER trg_generate_login_id
+BEFORE INSERT ON public.profiles
+FOR EACH ROW
+EXECUTE FUNCTION public.fn_generate_login_id();
+
+-- 3.2 Trigger: Auto-Initialize Profile Dependencies (Resume, Private Info, Allocations, Salary)
+CREATE OR REPLACE FUNCTION public.fn_init_profile_dependencies()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Initialize resume
+    INSERT INTO public.employee_resumes (profile_id)
+    VALUES (NEW.id)
+    ON CONFLICT (profile_id) DO NOTHING;
+
+    -- Initialize private info
+    INSERT INTO public.employee_private_info (profile_id)
+    VALUES (NEW.id)
+    ON CONFLICT (profile_id) DO NOTHING;
+
+    -- Initialize leave allocation for current year
+    INSERT INTO public.time_off_allocations (company_id, profile_id, year, paid_time_off_allocated, sick_leave_allocated)
+    VALUES (NEW.company_id, NEW.id, EXTRACT(YEAR FROM CURRENT_DATE)::INT, 24.00, 7.00)
+    ON CONFLICT (profile_id, year) DO NOTHING;
+
+    -- Initialize default salary structure
+    INSERT INTO public.salary_structures (profile_id, monthly_wage)
+    VALUES (NEW.id, 0.00)
+    ON CONFLICT (profile_id) DO NOTHING;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_init_profile_dependencies ON public.profiles;
+CREATE TRIGGER trg_init_profile_dependencies
+AFTER INSERT ON public.profiles
+FOR EACH ROW
+EXECUTE FUNCTION public.fn_init_profile_dependencies();
+
+-- 3.3 Trigger: Auto-Compute Salary Breakdown
 CREATE OR REPLACE FUNCTION public.fn_compute_salary_structure()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -275,7 +356,7 @@ BEFORE INSERT OR UPDATE OF monthly_wage ON public.salary_structures
 FOR EACH ROW
 EXECUTE FUNCTION public.fn_compute_salary_structure();
 
--- 3.2 Trigger: Calculate Work Hours and Overtime on Punch Out
+-- 3.4 Trigger: Calculate Work Hours and Overtime on Punch Out
 CREATE OR REPLACE FUNCTION public.fn_calculate_attendance_hours()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -290,6 +371,12 @@ BEGIN
         ELSE
             NEW.extra_hours := 0.00;
         END IF;
+
+        IF v_duration_hours < 5.00 AND v_duration_hours > 0.00 THEN
+            NEW.status := 'half_day';
+        ELSE
+            NEW.status := 'present';
+        END IF;
     END IF;
     NEW.updated_at := now();
     RETURN NEW;
@@ -302,31 +389,43 @@ BEFORE INSERT OR UPDATE OF check_in, check_out ON public.attendance_records
 FOR EACH ROW
 EXECUTE FUNCTION public.fn_calculate_attendance_hours();
 
--- 3.3 Trigger: Deduct Leave Balances on Approval
+-- 3.5 Trigger: Adjust Leave Balances on Approval / Reversal
 CREATE OR REPLACE FUNCTION public.fn_on_leave_approval()
 RETURNS TRIGGER AS $$
 BEGIN
+    -- Case 1: Newly Approved
     IF NEW.status = 'approved' AND (OLD.status IS NULL OR OLD.status != 'approved') THEN
         IF NEW.time_off_type = 'paid_time_off' THEN
             UPDATE public.time_off_allocations
-            SET paid_time_off_used = paid_time_off_used + NEW.allocation_days,
-                updated_at = now()
-            WHERE profile_id = NEW.profile_id
-              AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
+            SET paid_time_off_used = paid_time_off_used + NEW.allocation_days, updated_at = now()
+            WHERE profile_id = NEW.profile_id AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
         ELSIF NEW.time_off_type = 'sick_leave' THEN
             UPDATE public.time_off_allocations
-            SET sick_leave_used = sick_leave_used + NEW.allocation_days,
-                updated_at = now()
-            WHERE profile_id = NEW.profile_id
-              AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
+            SET sick_leave_used = sick_leave_used + NEW.allocation_days, updated_at = now()
+            WHERE profile_id = NEW.profile_id AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
         ELSIF NEW.time_off_type = 'unpaid_leaves' THEN
             UPDATE public.time_off_allocations
-            SET unpaid_leaves_taken = unpaid_leaves_taken + NEW.allocation_days,
-                updated_at = now()
-            WHERE profile_id = NEW.profile_id
-              AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
+            SET unpaid_leaves_taken = unpaid_leaves_taken + NEW.allocation_days, updated_at = now()
+            WHERE profile_id = NEW.profile_id AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
+        END IF;
+
+    -- Case 2: Previously Approved and now Rejected (Reversal)
+    ELSIF OLD.status = 'approved' AND NEW.status = 'rejected' THEN
+        IF NEW.time_off_type = 'paid_time_off' THEN
+            UPDATE public.time_off_allocations
+            SET paid_time_off_used = GREATEST(0, paid_time_off_used - NEW.allocation_days), updated_at = now()
+            WHERE profile_id = NEW.profile_id AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
+        ELSIF NEW.time_off_type = 'sick_leave' THEN
+            UPDATE public.time_off_allocations
+            SET sick_leave_used = GREATEST(0, sick_leave_used - NEW.allocation_days), updated_at = now()
+            WHERE profile_id = NEW.profile_id AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
+        ELSIF NEW.time_off_type = 'unpaid_leaves' THEN
+            UPDATE public.time_off_allocations
+            SET unpaid_leaves_taken = GREATEST(0, unpaid_leaves_taken - NEW.allocation_days), updated_at = now()
+            WHERE profile_id = NEW.profile_id AND year = EXTRACT(YEAR FROM NEW.start_date)::INT;
         END IF;
     END IF;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -436,3 +535,11 @@ FOR SELECT USING (profile_id = auth.uid() OR public.is_admin_or_hr());
 DROP POLICY IF EXISTS "Admin manage allocations" ON public.time_off_allocations;
 CREATE POLICY "Admin manage allocations" ON public.time_off_allocations
 FOR ALL USING (public.is_admin_or_hr());
+
+-- Storage Bucket Setup (Executes if storage schema is available)
+INSERT INTO storage.buckets (id, name, public) 
+VALUES 
+  ('company-assets', 'company-assets', true),
+  ('avatars', 'avatars', true),
+  ('documents', 'documents', false)
+ON CONFLICT (id) DO NOTHING;
