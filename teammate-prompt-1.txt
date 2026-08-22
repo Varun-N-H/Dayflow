@@ -1,299 +1,192 @@
 Please create two UI/Modal components for our Dayflow HRMS project and push them to the GitHub main branch:
 
-1. Create `src/components/attendance/AttendanceDateFilter.tsx`:
-```tsx
-import React from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-
-interface AttendanceDateFilterProps {
-  currentDate: string; // ISO format or date string
-  onPrev: () => void;
-  onNext: () => void;
-  onChangeDate: (date: string) => void;
-  viewMode?: 'day' | 'month';
-  onToggleViewMode?: (mode: 'day' | 'month') => void;
-}
-
-export function AttendanceDateFilter({
-  currentDate,
-  onPrev,
-  onNext,
-  onChangeDate,
-  viewMode = 'day',
-  onToggleViewMode,
-}: AttendanceDateFilterProps) {
-  return (
-    <div className="flex items-center gap-2">
-      {/* Previous / Next Arrow Controls */}
-      <div className="flex items-center rounded-lg border border-slate-200 bg-white shadow-2xs">
-        <button
-          onClick={onPrev}
-          title="Previous"
-          className="p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 rounded-l-lg transition-colors cursor-pointer"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <div className="h-4 w-px bg-slate-200" />
-        <button
-          onClick={onNext}
-          title="Next"
-          className="p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 rounded-r-lg transition-colors cursor-pointer"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* Date Picker Input */}
-      <div className="relative flex items-center">
-        <input
-          type={viewMode === 'month' ? 'month' : 'date'}
-          value={currentDate}
-          onChange={(e) => onChangeDate(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-2xs focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 cursor-pointer"
-        />
-      </div>
-
-      {/* View Mode Toggle (Optional Day / Month) */}
-      {onToggleViewMode && (
-        <div className="hidden sm:flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-medium">
-          <button
-            onClick={() => onToggleViewMode('day')}
-            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-              viewMode === 'day' ? 'bg-white text-purple-700 font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Day
-          </button>
-          <button
-            onClick={() => onToggleViewMode('month')}
-            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-              viewMode === 'month' ? 'bg-white text-purple-700 font-bold shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Month
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-```
-
-2. Create `src/components/modals/TimeOffModal.tsx`:
+1. Create `src/components/payroll/PayslipModal.tsx`:
 ```tsx
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Button } from '@/components/ui/Button';
-import { X, Calendar, Upload, FileText, AlertCircle } from 'lucide-react';
-import { TimeOffType } from '@/types/database.types';
+import { formatCurrency, formatDate } from '@/lib/utils/formatters';
+import { X, Printer, Download, Sparkles, Building2 } from 'lucide-react';
+import { Profile, SalaryStructure } from '@/types/database.types';
 
-interface TimeOffModalProps {
+interface PayslipModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (formData: FormData) => Promise<void>;
-  employeeName: string;
-  defaultStartDate?: string;
-  defaultEndDate?: string;
+  profile: Profile;
+  salaryStructure: SalaryStructure | null;
+  monthName: string;
+  year: number;
+  payableDays: number;
+  totalWorkingDays: number;
 }
 
-export function TimeOffModal({
+export function PayslipModal({
   isOpen,
   onClose,
-  onSubmit,
-  employeeName,
-  defaultStartDate,
-  defaultEndDate,
-}: TimeOffModalProps) {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const [timeOffType, setTimeOffType] = useState<TimeOffType>('paid_time_off');
-  const [startDate, setStartDate] = useState(defaultStartDate || todayStr);
-  const [endDate, setEndDate] = useState(defaultEndDate || todayStr);
-  const [remarks, setRemarks] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  profile,
+  salaryStructure,
+  monthName,
+  year,
+  payableDays,
+  totalWorkingDays,
+}: PayslipModalProps) {
+  if (!isOpen || !salaryStructure) return null;
 
-  if (!isOpen) return null;
+  // Prorated calculations based on payable days
+  const prorationRatio = totalWorkingDays > 0 ? Math.min(1, payableDays / totalWorkingDays) : 1;
+  const basic = (salaryStructure.basic_salary || 25000) * prorationRatio;
+  const hra = (salaryStructure.hra || 12500) * prorationRatio;
+  const standard = (salaryStructure.standard_allowance || 4167) * prorationRatio;
+  const bonus = (salaryStructure.performance_bonus || 2082.5) * prorationRatio;
+  const lta = (salaryStructure.leave_travel_allowance || 2082.5) * prorationRatio;
+  const fixed = (salaryStructure.fixed_allowance || 2918) * prorationRatio;
 
-  // Calculate allocation days
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffTime = Math.max(0, end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  const allocationDays = isNaN(diffDays) ? 1 : diffDays;
+  const grossEarnings = basic + hra + standard + bonus + lta + fixed;
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
+  const pfEmployee = (salaryStructure.employee_pf || 3000) * prorationRatio;
+  const pt = salaryStructure.professional_tax || 200;
+  const totalDeductions = pfEmployee + pt;
+  const netPay = grossEarnings - totalDeductions;
 
-    if (new Date(startDate) > new Date(endDate)) {
-      setError('End date cannot be earlier than start date.');
-      return;
-    }
-
-    setLoading(true);
-    const formData = new FormData();
-    formData.append('timeOffType', timeOffType);
-    formData.append('startDate', startDate);
-    formData.append('endDate', endDate);
-    formData.append('allocationDays', String(allocationDays));
-    formData.append('remarks', remarks);
-    if (file) {
-      formData.append('attachmentFile', file);
-    }
-
-    try {
-      await onSubmit(formData);
-      onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to submit time off request.');
-    } finally {
-      setLoading(false);
-    }
+  function handlePrint() {
+    window.print();
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto print:p-0 print:border-none print:shadow-none">
         
-        {/* Modal Header (Wireframe 6) */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
-              <Calendar className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Time off Type Request</h2>
-              <p className="text-xs text-slate-500">Apply for annual, medical, or unpaid time off</p>
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-6 print:hidden">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-purple-600" />
+            <h2 className="text-lg font-bold text-slate-900">Payslip Preview</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handlePrint}>
+              <Printer className="h-4 w-4" /> Print
+            </Button>
+            <button
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
-        {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Printable Payslip Document */}
+        <div className="space-y-6">
           
-          {/* Employee Name (Read Only) */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Employee</label>
-            <input
-              type="text"
-              readOnly
-              value={employeeName}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800"
-            />
-          </div>
-
-          {/* Time Off Type */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Time off Type *</label>
-            <select
-              value={timeOffType}
-              onChange={(e) => setTimeOffType(e.target.value as TimeOffType)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 focus:border-purple-600 focus:outline-none"
-            >
-              <option value="paid_time_off">Paid time off (Vacation)</option>
-              <option value="sick_leave">Sick Leave (Medical)</option>
-              <option value="unpaid_leaves">Unpaid Leaves (Loss of Pay)</option>
-            </select>
-          </div>
-
-          {/* Validity Period */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Org Header */}
+          <div className="flex justify-between items-start border-b border-slate-200 pb-5">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Start Date *</label>
-              <input
-                type="date"
-                required
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-purple-600"
-              />
+              <h1 className="text-xl font-bold text-slate-900">{profile.company?.name || 'Dayflow HRMS'}</h1>
+              <p className="text-xs text-slate-500 mt-0.5">Payslip for {monthName} {year}</p>
+            </div>
+            <div className="text-right text-xs">
+              <span className="font-mono font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-md">
+                {profile.login_id}
+              </span>
+            </div>
+          </div>
+
+          {/* Employee Meta Details */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div>
+              <span className="text-slate-400 block font-medium">Employee Name</span>
+              <p className="font-bold text-slate-900 mt-0.5">{profile.first_name} {profile.last_name}</p>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">End Date *</label>
-              <input
-                type="date"
-                required
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-purple-600"
-              />
+              <span className="text-slate-400 block font-medium">Designation</span>
+              <p className="font-bold text-slate-900 mt-0.5">{profile.job_position || 'Staff'}</p>
+            </div>
+            <div>
+              <span className="text-slate-400 block font-medium">Payable Days</span>
+              <p className="font-mono font-bold text-purple-700 mt-0.5">{payableDays} / {totalWorkingDays}</p>
+            </div>
+            <div>
+              <span className="text-slate-400 block font-medium">Pay Period</span>
+              <p className="font-bold text-slate-900 mt-0.5">{monthName} {year}</p>
             </div>
           </div>
 
-          {/* Allocation Preview */}
-          <div className="flex items-center justify-between rounded-xl bg-purple-50/60 border border-purple-100 p-3 text-xs">
-            <span className="font-semibold text-purple-900">Total Requested Duration:</span>
-            <span className="font-mono font-bold text-purple-700">
-              {String(allocationDays).padStart(2, '0')}.00 Days
-            </span>
-          </div>
-
-          {/* Attachment for Sick Leave Certificate */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Attachment <span className="text-slate-400 font-normal">(For sick leave certificate)</span>
-            </label>
-            <div className="flex items-center gap-2">
-              <label className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 text-xs text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer">
-                <Upload className="h-4 w-4 text-purple-600" />
-                <span className="truncate">{file ? file.name : 'Upload Medical Note / PDF'}</span>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  className="hidden"
-                />
-              </label>
-              {file && (
-                <button
-                  type="button"
-                  onClick={() => setFile(null)}
-                  className="p-2 text-slate-400 hover:text-rose-600"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+          {/* Earnings & Deductions Tables */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs">
+            
+            {/* Earnings */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="bg-slate-100 p-2.5 font-bold text-slate-900 border-b border-slate-200">
+                Earnings
+              </div>
+              <div className="p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Basic Salary</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(basic)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">HRA</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(hra)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Standard Allowance</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(standard)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Performance Bonus</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(bonus)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">LTA</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(lta)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Fixed Allowance</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(fixed)}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
+                  <span>Gross Earnings</span>
+                  <span className="font-mono text-purple-700">{formatCurrency(grossEarnings)}</span>
+                </div>
+              </div>
             </div>
+
+            {/* Deductions */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="bg-slate-100 p-2.5 font-bold text-slate-900 border-b border-slate-200">
+                Deductions
+              </div>
+              <div className="p-3 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Provident Fund (PF)</span>
+                  <span className="font-mono font-bold text-rose-600">-{formatCurrency(pfEmployee)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Professional Tax (PT)</span>
+                  <span className="font-mono font-bold text-rose-600">-{formatCurrency(pt)}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
+                  <span>Total Deductions</span>
+                  <span className="font-mono text-rose-600">-{formatCurrency(totalDeductions)}</span>
+                </div>
+              </div>
+            </div>
+
           </div>
 
-          {/* Reason / Remarks */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Remarks / Reason</label>
-            <textarea
-              rows={2}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Optional notes for your manager/admin..."
-              className="w-full rounded-lg border border-slate-300 bg-white p-2 text-xs text-slate-900 focus:border-purple-600"
-            />
+          {/* Net Pay Banner */}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex justify-between items-center">
+            <div>
+              <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">Net Take Home Pay</p>
+              <p className="text-[11px] text-emerald-600">Transferred to registered bank account</p>
+            </div>
+            <p className="font-mono font-bold text-xl text-emerald-950">
+              {formatCurrency(netPay)}
+            </p>
           </div>
 
-          {/* Action Footer (Submit / Discard) */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Discard
-            </Button>
-            <Button type="submit" variant="primary" isLoading={loading}>
-              Submit Request
-            </Button>
-          </div>
-
-        </form>
+        </div>
 
       </div>
     </div>
@@ -301,4 +194,32 @@ export function TimeOffModal({
 }
 ```
 
-3. Run `git add src/components/attendance/AttendanceDateFilter.tsx src/components/modals/TimeOffModal.tsx`, commit with message `"feat(time-off): add AttendanceDateFilter and TimeOffModal components"`, and push to origin main.
+2. Create `src/components/layout/Footer.tsx`:
+```tsx
+import React from 'react';
+import { Settings, Sparkles } from 'lucide-react';
+import Link from 'next/link';
+
+export function Footer() {
+  return (
+    <footer className="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-6 border-t border-slate-200 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-purple-600" />
+        <span className="font-semibold text-slate-700">Dayflow HRMS</span>
+        <span>&bull; Every workday, perfectly aligned.</span>
+      </div>
+
+      <div className="flex items-center gap-6">
+        <Link href="/employees" className="hover:text-purple-600 transition-colors">Directory</Link>
+        <Link href="/attendance" className="hover:text-purple-600 transition-colors">Attendance</Link>
+        <Link href="/time-off" className="hover:text-purple-600 transition-colors">Time Off</Link>
+        <Link href="/profile" className="hover:text-purple-600 transition-colors flex items-center gap-1">
+          <Settings className="h-3.5 w-3.5" /> Settings
+        </Link>
+      </div>
+    </footer>
+  );
+}
+```
+
+3. Run `git add src/components/payroll/PayslipModal.tsx src/components/layout/Footer.tsx`, commit with message `"feat(payroll): add PayslipModal and Footer components"`, and push to origin main.
