@@ -1,101 +1,114 @@
-Please create two reusable UI components for our Dayflow HRMS project and push them to the GitHub main branch:
+Please create two helper/UI components for our Dayflow HRMS project and push them to the GitHub main branch:
 
-1. Create `src/components/ui/Button.tsx`:
-```tsx
-import React from 'react';
+1. Create `src/lib/utils/formatters.ts`:
+```ts
+/**
+ * Utility formatters for Dayflow HRMS
+ */
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'success';
-  size?: 'sm' | 'md' | 'lg';
-  isLoading?: boolean;
+// Format Currency to Indian Rupee format (e.g. ₹25,000.00)
+export function formatCurrency(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || isNaN(amount)) return '₹0.00';
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
-export function Button({
-  children,
-  variant = 'primary',
-  size = 'md',
-  isLoading = false,
-  className = '',
-  disabled,
-  ...props
-}: ButtonProps) {
-  const baseStyles = 'inline-flex items-center justify-center font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-purple-500/30 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
+// Format Date string to clean readable date (e.g. 22 Oct 2026 or 22/10/2026)
+export function formatDate(dateString: string | null | undefined, format: 'short' | 'long' = 'short'): string {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return dateString;
 
-  const sizeStyles = {
-    sm: 'text-xs px-3 py-1.5 rounded-md gap-1.5',
-    md: 'text-sm px-4 py-2 rounded-lg gap-2',
-    lg: 'text-base px-6 py-2.5 rounded-xl gap-2.5',
-  };
+  if (format === 'long') {
+    return date.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  }
 
-  const variantStyles = {
-    primary: 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-600/20',
-    secondary: 'bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-200',
-    outline: 'bg-transparent hover:bg-slate-50 text-slate-700 border border-slate-300',
-    ghost: 'bg-transparent hover:bg-slate-100 text-slate-700',
-    danger: 'bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-600/20',
-    success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20',
-  };
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
 
+// Format Decimal Hours to HH:MM (e.g. 9.00 -> 09:00, 1.50 -> 01:30)
+export function formatHours(decimalHours: number | null | undefined): string {
+  if (decimalHours === null || decimalHours === undefined || isNaN(decimalHours)) return '00:00';
+  const hours = Math.floor(decimalHours);
+  const minutes = Math.round((decimalHours - hours) * 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+// Format Timestamp to Time String (e.g. 10:00)
+export function formatTime(isoString: string | null | undefined): string {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  if (isNaN(date.getTime())) return isoString;
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+```
+
+2. Create `src/components/attendance/AttendanceStats.tsx`:
+```tsx
+import React from 'react';
+import { CalendarCheck, CalendarX, Briefcase } from 'lucide-react';
+
+export interface AttendanceStatsProps {
+  daysPresent: number;
+  leavesCount: number;
+  totalWorkingDays: number;
+}
+
+export function AttendanceStats({
+  daysPresent,
+  leavesCount,
+  totalWorkingDays,
+}: AttendanceStatsProps) {
   return (
-    <button
-      className={`${baseStyles} ${sizeStyles[size]} ${variantStyles[variant]} ${className}`}
-      disabled={disabled || isLoading}
-      {...props}
-    >
-      {isLoading ? (
-        <span className="inline-flex items-center gap-2">
-          <svg className="animate-spin h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          Loading...
-        </span>
-      ) : (
-        children
-      )}
-    </button>
+    <div className="flex flex-wrap items-center gap-3">
+      {/* 1. Count of days present */}
+      <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3.5 py-2 shadow-xs">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+          <CalendarCheck className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-[11px] font-medium text-emerald-800">Count of days present</p>
+          <p className="text-base font-bold text-emerald-950 tabular-nums">{daysPresent}</p>
+        </div>
+      </div>
+
+      {/* 2. Leaves count */}
+      <div className="flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50/60 px-3.5 py-2 shadow-xs">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-700">
+          <CalendarX className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-[11px] font-medium text-purple-800">Leaves count</p>
+          <p className="text-base font-bold text-purple-950 tabular-nums">{leavesCount}</p>
+        </div>
+      </div>
+
+      {/* 3. Total working days */}
+      <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 shadow-xs">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+          <Briefcase className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="text-[11px] font-medium text-slate-600">Total working days</p>
+          <p className="text-base font-bold text-slate-900 tabular-nums">{totalWorkingDays}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 ```
 
-2. Create `src/components/ui/Badge.tsx`:
-```tsx
-import React from 'react';
-
-export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'outline';
-  size?: 'sm' | 'md';
-}
-
-export function Badge({
-  children,
-  variant = 'primary',
-  size = 'md',
-  className = '',
-  ...props
-}: BadgeProps) {
-  const baseStyles = 'inline-flex items-center font-medium tracking-wide rounded-md transition-colors';
-
-  const sizeStyles = {
-    sm: 'text-[10px] px-1.5 py-0.5',
-    md: 'text-xs px-2.5 py-0.5',
-  };
-
-  const variantStyles = {
-    primary: 'bg-purple-50 text-purple-700 border border-purple-200/80',
-    secondary: 'bg-slate-100 text-slate-700 border border-slate-200',
-    success: 'bg-emerald-50 text-emerald-700 border border-emerald-200/80',
-    warning: 'bg-amber-50 text-amber-700 border border-amber-200/80',
-    danger: 'bg-rose-50 text-rose-700 border border-rose-200/80',
-    outline: 'bg-transparent text-slate-600 border border-slate-300',
-  };
-
-  return (
-    <span className={`${baseStyles} ${sizeStyles[size]} ${variantStyles[variant]} ${className}`} {...props}>
-      {children}
-    </span>
-  );
-}
-```
-
-3. Run `git add src/components/ui/`, commit with message `"feat(ui): add reusable Button and Badge components"`, and push to origin main.
+3. Run `git add src/lib/utils/formatters.ts src/components/attendance/AttendanceStats.tsx`, commit with message `"feat(attendance): add formatters and AttendanceStats component"`, and push to origin main.
