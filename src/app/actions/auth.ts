@@ -20,11 +20,11 @@ export async function signInAction(formData: FormData): Promise<AuthResponse> {
   }
 
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   let emailToUse = identifier;
 
   // If the identifier is not an email, resolve it from the profiles table using login_id
   if (!identifier.includes('@')) {
-    const adminClient = createAdminClient();
     const { data: profileData, error: profileError } = await adminClient
       .from('profiles')
       .select('email, is_temporary_password')
@@ -49,11 +49,11 @@ export async function signInAction(formData: FormData): Promise<AuthResponse> {
   }
 
   // Check if user is logging in with a system-generated temporary password
-  const { data: userProfile } = await supabase
+  const { data: userProfile } = await adminClient
     .from('profiles')
     .select('is_temporary_password')
     .eq('id', data.user.id)
-    .single();
+    .maybeSingle();
 
   if (userProfile?.is_temporary_password) {
     return { success: true, forcePasswordReset: true, redirectTo: '/profile?tab=security&reset=true' };
@@ -62,11 +62,11 @@ export async function signInAction(formData: FormData): Promise<AuthResponse> {
   return { success: true, redirectTo: '/employees' };
 }
 
-// 2. Sign Up Action (Company Registration & Admin Onboarding)
+// 2. Sign Up Action (Company Registration & Admin Onboarding) - Bulletproof Dual Strategy
 export async function signUpCompanyAction(formData: FormData): Promise<AuthResponse> {
   const companyName = formData.get('companyName')?.toString().trim();
   const name = formData.get('name')?.toString().trim();
-  const email = formData.get('email')?.toString().trim();
+  const email = formData.get('email')?.toString().trim().toLowerCase();
   const phone = formData.get('phone')?.toString().trim();
   const password = formData.get('password')?.toString();
   const confirmPassword = formData.get('confirmPassword')?.toString();
@@ -119,7 +119,7 @@ export async function signUpCompanyAction(formData: FormData): Promise<AuthRespo
       }
     }
 
-    // 2. Create Company Record
+    // 2. Create or Upsert Company Record
     const { data: company, error: companyError } = await adminClient
       .from('companies')
       .insert({
@@ -136,28 +136,68 @@ export async function signUpCompanyAction(formData: FormData): Promise<AuthRespo
       return { success: false, error: `Company creation failed: ${companyError?.message}` };
     }
 
-    // 3. Create Admin User in Supabase Auth
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email: email,
-      password: password,
-      email_confirm: true,
-      user_metadata: {
-        first_name: firstName,
-        last_name: lastName,
-        role: 'admin',
-        company_id: company.id,
+    // 3. Create Admin User in Supabase Auth (Try Public SignUp first, then Admin fallback)
+    let authUserId: string | null = null;
+
+    // Strategy A: Standard Supabase SignUp
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          role: 'admin',
+          company_id: company.id,
+        },
       },
     });
 
-    if (authError || !authData.user) {
-      return { success: false, error: `Admin user registration failed: ${authError?.message}` };
+    if (signUpData?.user) {
+      authUserId = signUpData.user.id;
+    } else {
+      // Strategy B: Admin create user API fallback
+      const { data: adminUserData, error: adminUserError } = await adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          first_name: firstName,
+          last_name: lastName,
+          role: 'admin',
+          company_id: company.id,
+        },
+      });
+
+      if (adminUserData?.user) {
+        authUserId = adminUserData.user.id;
+      } else {
+        // Strategy C: If user already exists in auth, attempt sign-in
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInData?.user) {
+          authUserId = signInData.user.id;
+        } else {
+          return {
+            success: false,
+            error: `User creation failed: ${signUpError?.message || adminUserError?.message || signInError?.message || 'Database error checking email'}`,
+          };
+        }
+      }
     }
 
-    // 4. Insert Admin Profile
+    if (!authUserId) {
+      return { success: false, error: 'Failed to obtain user identity during registration.' };
+    }
+
+    // 4. Upsert Admin Profile in public.profiles
     const { error: profileError } = await adminClient
       .from('profiles')
-      .insert({
-        id: authData.user.id,
+      .upsert({
+        id: authUserId,
         company_id: company.id,
         role: 'admin',
         first_name: firstName,
@@ -166,25 +206,23 @@ export async function signUpCompanyAction(formData: FormData): Promise<AuthRespo
         phone: phone || null,
         job_position: 'Founder & HR Administrator',
         is_temporary_password: false,
-      });
+      }, { onConflict: 'id' });
 
     if (profileError) {
-      // Rollback: delete the auth user so they can retry cleanly
-      await adminClient.auth.admin.deleteUser(authData.user.id);
-      return { success: false, error: `Profile setup failed: ${profileError.message}. Please try signing up again.` };
+      return { success: false, error: `Profile setup failed: ${profileError.message}` };
     }
 
     // 5. Create initial time-off allocation for this admin
     const currentYear = new Date().getFullYear();
     await adminClient.from('time_off_allocations').upsert({
       company_id: company.id,
-      profile_id: authData.user.id,
+      profile_id: authUserId,
       year: currentYear,
       paid_time_off_allocated: 24,
       sick_leave_allocated: 7,
     }, { onConflict: 'profile_id,year' });
 
-    // 6. Sign the user in directly
+    // 6. Sign in session directly
     await supabase.auth.signInWithPassword({
       email,
       password,
@@ -210,6 +248,7 @@ export async function updatePasswordAction(formData: FormData): Promise<AuthResp
   }
 
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -225,7 +264,7 @@ export async function updatePasswordAction(formData: FormData): Promise<AuthResp
   }
 
   // Update profile flag
-  await supabase
+  await adminClient
     .from('profiles')
     .update({ is_temporary_password: false })
     .eq('id', user.id);
