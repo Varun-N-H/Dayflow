@@ -1,0 +1,174 @@
+# Dayflow HRMS — 5-Minute Video Demo Script
+================================================================================
+Everything you need for your hackathon video walkthrough: 
+Exact On-Screen Actions + Word-for-Word Voiceover Script.
+================================================================================
+
+--------------------------------------------------------------------------------
+[0:00 – 0:45] PHASE 1: INTRODUCTION & THE CORE PROBLEM
+--------------------------------------------------------------------------------
+
+SCREEN ACTION:
+- Start on the Sign In page (http://localhost:3000/signin).
+- Move the cursor over the clean card and the "Don't have an Account? Sign Up" link.
+
+VOICEOVER:
+"Hello everyone! Welcome to Dayflow — a modern, unified Human Resource Management 
+System built to align every workday perfectly.
+
+In growing companies, managing HR operations across spreadsheets and fragmented tools 
+is chaotic. Employee onboarding is slow, payroll computations are error-prone, and 
+attendance and leave approvals lack visibility.
+
+Dayflow solves this by delivering a cohesive, role-based platform that unifies 
+organization registration, automated employee provisioning, live attendance tracking, 
+interactive 12-month leave management, and automated Indian salary structure 
+computation into one lightning-fast experience."
+
+
+--------------------------------------------------------------------------------
+[0:45 – 1:30] PHASE 2: ORGANIZATION SETUP & DYNAMIC ONBOARDING
+--------------------------------------------------------------------------------
+
+SCREEN ACTION:
+- Click on "Don't have an Account? Sign Up" (notice the sleek top loading bar).
+- Type Company Name: "Odoo India".
+- Click the logo upload box and upload any logo (notice the instant live image preview).
+- Fill in:
+    * Name: "Varun Admin"
+    * Email: "admin@odooindia.com"
+    * Password: "password123"
+    * Confirm Password: "password123"
+- Click "Sign Up".
+
+VOICEOVER:
+"Let's start by onboarding a new organization. As an HR Administrator or Founder, 
+I register our company, 'Odoo India', and upload our brand logo.
+
+Under the hood, Dayflow's onboarding engine automatically computes a deterministic 
+company prefix — in this case, 'OI' — sets up organizational departments, and 
+provisions the initial Administrator account in a single atomic transaction."
+
+
+--------------------------------------------------------------------------------
+[1:30 – 2:30] PHASE 3: EMPLOYEE DIRECTORY & SALARY BREAKDOWN ENGINE
+--------------------------------------------------------------------------------
+
+SCREEN ACTION:
+- You land on /employees (point out the dynamic Odoo India logo and name in the top navbar).
+- Click "+ Add Employee".
+- Fill in:
+    * First Name: "John"
+    * Last Name: "Doe"
+    * Email: "john.doe@example.com"
+    * Department: "Engineering"
+    * Designation: "Senior Software Engineer"
+    * Monthly Wage: "80000"
+- Click "Create Employee".
+- Show the success modal displaying the deterministic Login ID ("OIJODO20260001") 
+  and temporary password.
+- Click on John Doe's card to open his full profile (/profile).
+- Click the "Salary Info" tab and show the automatic statutory breakdown:
+    * Basic Salary (50%): Rs. 40,000
+    * HRA (50% of Basic): Rs. 20,000
+    * Standard Allowance: Rs. 4,167
+    * Provident Fund (12%): Rs. 4,800
+    * Professional Tax: Rs. 200
+
+VOICEOVER:
+"Now we are on the Admin Dashboard. Notice how the navbar immediately displays 
+our company logo and active session.
+
+Let's add our first employee. When we enter John Doe's details and set a monthly 
+gross wage of 80,000 rupees, Dayflow's deterministic ID generator provisions John 
+with a unique login ID — 'OIJODO20260001' — and a secure temporary password.
+
+If we inspect John's profile under the Salary Info tab, Dayflow's automated statutory 
+engine has already calculated the complete Indian CTC breakdown — 50% Basic Salary, 
+50% HRA, Provident Fund at 12%, Professional Tax, and Performance Bonuses with 
+zero manual calculation."
+
+
+--------------------------------------------------------------------------------
+[2:30 – 3:30] PHASE 4: LIVE SYSTRAY ATTENDANCE & DAILY LEDGER
+--------------------------------------------------------------------------------
+
+SCREEN ACTION:
+- Move cursor to the top right of the navbar to the Systray Widget.
+- Click "Check IN ->" — watch the badge turn to pulsing emerald "Checked In".
+- Click the "Attendance" tab in the navbar.
+- Show the Daily Ledger table displaying all company employees with their live 
+  status badges (Present, Absent, On Leave) and check-in timestamp.
+- Click "Check OUT ->" in the top right to demonstrate instantaneous status update.
+
+VOICEOVER:
+"Next, let's explore Attendance Tracking. Dayflow features a persistent, one-click 
+Systray widget at the top right.
+
+With one tap on 'Check IN', our timestamp is recorded and our live status turns 
+to an active emerald indicator. Navigating to the Attendance Ledger, HR Admins have 
+a real-time overview of the entire workforce for any selected date — tracking live 
+presence, total working hours, and overtime calculations seamlessly."
+
+
+--------------------------------------------------------------------------------
+[3:30 – 4:15] PHASE 5: 12-MONTH INTERACTIVE TIME-OFF & APPROVAL QUEUE
+--------------------------------------------------------------------------------
+
+SCREEN ACTION:
+- Click the "Time Off" tab in the navbar.
+- Point out the 12-Month Interactive Calendar Grid and remaining leave balances 
+  (24 Paid Time Off, 7 Sick Days).
+- Click on any upcoming date on the calendar or click "Request Time Off".
+- Select Leave Type: "Paid Time Off", pick start/end dates, add remark: "Family Vacation", 
+  and submit.
+- Show the request appearing in the Pending Requests Queue below.
+- Click the green "Approve" checkmark button to demonstrate instant approval.
+
+VOICEOVER:
+"For leave management, Dayflow provides a comprehensive 12-Month Annual Calendar view. 
+Employees and HR can visualize holidays and booked time off across the entire year at a glance.
+
+When an employee requests time off, leave quotas are validated in real time against their 
+annual allocation. As an Admin, the request appears directly in our centralized Approval Queue, 
+where we can approve or reject leaves with a single click."
+
+
+--------------------------------------------------------------------------------
+[4:15 – 4:45] PHASE 6: ROLE-BASED ACCESS CONTROL & EMPLOYEE SELF-SERVICE
+--------------------------------------------------------------------------------
+
+SCREEN ACTION:
+- Click the user avatar at top right -> Click "Sign Out".
+- On /signin, enter John's credentials:
+    * Login ID / Email: "OIJODO20260001"
+    * Password: (enter the temporary password generated earlier)
+- Show the forced Security / Password Reset screen on first login.
+- Point out that John's view is Employee Self-Service:
+    * The "+ Add Employee" button is gone.
+    * The Salary Info tab is locked and hidden.
+    * John sees only his personal monthly attendance and leave requests.
+
+VOICEOVER:
+"Now let's verify our Role-Based Access Control. When John Doe logs in using his 
+system-generated ID and temporary password, Dayflow automatically enforces a 
+first-time security password reset.
+
+Once logged in as an Employee, the UI adapts: administrative controls are locked down, 
+confidential salary structures are restricted, and the user receives a clean, self-service 
+dashboard dedicated to their personal schedule and attendance."
+
+
+--------------------------------------------------------------------------------
+[4:45 – 5:00] PHASE 7: WRAP-UP & TECH STACK
+--------------------------------------------------------------------------------
+
+SCREEN ACTION:
+- Return to the main /employees view or landing screen.
+
+VOICEOVER:
+"Dayflow is built with Next.js 15 (App Router & Turbopack), Supabase PostgreSQL with 
+Row-Level Security, and Tailwind CSS, delivering sub-10ms response times and instant 
+SWR client caching.
+
+Thank you for watching the Dayflow demo!"
