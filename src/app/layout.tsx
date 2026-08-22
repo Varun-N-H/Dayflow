@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Dayflow — Human Resource Management System',
-  description: 'Every workday, perfectly aligned. Comprehensive HRMS for employees and administrators.',
+  description: 'Every workday, perfectly aligned. Modern, professional HRMS for employees and administrators.',
 };
 
 export default function RootLayout({
@@ -12,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-zinc-950 text-zinc-100 min-h-screen antialiased selection:bg-purple-500 selection:text-white">
+    <html lang="en" className="light">
+      <body className="bg-slate-50 text-slate-900 min-h-screen antialiased selection:bg-purple-500 selection:text-white">
         {children}
       </body>
     </html>
