@@ -139,8 +139,8 @@ export async function createEmployeeAction(formData: FormData): Promise<{
 
   if (!user) return { success: false, error: 'Unauthorized' };
 
-  // Verify the requester is an admin
-  const { data: adminProfile } = await supabase
+  // Verify the requester is an admin using adminClient
+  const { data: adminProfile } = await adminClient
     .from('profiles')
     .select('role, company_id')
     .eq('id', user.id)
@@ -152,7 +152,7 @@ export async function createEmployeeAction(formData: FormData): Promise<{
 
   const firstName = formData.get('firstName')?.toString().trim() || '';
   const lastName = formData.get('lastName')?.toString().trim() || '';
-  const personalEmail = formData.get('personalEmail')?.toString().trim() || '';
+  const personalEmail = formData.get('email')?.toString().trim() || formData.get('personalEmail')?.toString().trim() || '';
   const jobPosition = formData.get('jobPosition')?.toString().trim() || '';
   const departmentId = formData.get('departmentId')?.toString() || null;
   const monthlyWage = Number(formData.get('monthlyWage')) || 0;
