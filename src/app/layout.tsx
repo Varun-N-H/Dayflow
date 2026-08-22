@@ -5,6 +5,10 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Dayflow — Human Resource Management System',
   description: 'Every workday, perfectly aligned. Modern, professional HRMS for employees and administrators.',
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({
