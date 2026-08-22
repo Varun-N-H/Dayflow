@@ -86,3 +86,11 @@ body {
 .brand-button:active {
   transform: translateY(0);
 }
+
+/* Hide Next.js 15 Development Indicator Badge */
+[data-nextjs-dev-tools-button],
+[data-nextjs-toast],
+nextjs-portal {
+  display: none !important;
+}
+
