@@ -44,7 +44,7 @@ export async function getTimeOffDataAction(selectedYear?: number): Promise<TimeO
 
   const { data: currentProfile, error: profErr } = await adminClient
     .from('profiles')
-    .select('*, department:departments(name)')
+    .select('*, company:companies(*), department:departments(name)')
     .eq('id', user.id)
     .single();
 

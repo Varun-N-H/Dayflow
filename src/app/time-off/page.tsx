@@ -12,6 +12,7 @@ import {
 } from '@/app/actions/time-off';
 import { AnnualCalendarGrid } from '@/components/time-off/AnnualCalendarGrid';
 import { TimeOffModal } from '@/components/modals/TimeOffModal';
+import { getCachedData, setCachedData } from '@/lib/cache/appCache';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate } from '@/lib/utils/formatters';
@@ -50,16 +51,26 @@ function TimeOffContent() {
 
   const currentYear = new Date().getFullYear();
 
-  async function loadData() {
-    setLoading(true);
-    setError(null);
+  async function loadData(force = false) {
+    const cacheKey = `time_off_${currentYear}`;
+    if (!force) {
+      const cached = getCachedData<TimeOffDataResponse>(cacheKey);
+      if (cached) {
+        setData(cached);
+        setLoading(false);
+      }
+    }
+
     const res = await getTimeOffDataAction(currentYear);
     setLoading(false);
 
     if (!res.success) {
-      setError(res.error || 'Failed to load time off data.');
+      if (!data) {
+        setError(res.error || 'Failed to load time off data.');
+      }
     } else {
       setData(res);
+      setCachedData(cacheKey, res);
     }
   }
 

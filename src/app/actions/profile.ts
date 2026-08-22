@@ -30,7 +30,7 @@ export async function getProfileDataAction(targetProfileId?: string): Promise<{
   // Use adminClient (service role) to bypass RLS for identity check
   const { data: currentProfile, error: currErr } = await adminClient
     .from('profiles')
-    .select('*, department:departments(name)')
+    .select('*, company:companies(*), department:departments(name)')
     .eq('id', user.id)
     .single();
 

@@ -49,7 +49,7 @@ export async function getAttendanceAction(selectedDateStr?: string, viewMode: 'd
   // Use adminClient for fast profile lookup
   const { data: currentProfile, error: profErr } = await adminClient
     .from('profiles')
-    .select('*, department:departments(name)')
+    .select('*, company:companies(*), department:departments(name)')
     .eq('id', user.id)
     .single();
 

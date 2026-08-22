@@ -8,6 +8,7 @@ import { AttendanceStats } from '@/components/attendance/AttendanceStats';
 import { PayslipModal } from '@/components/payroll/PayslipModal';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { getCachedData, setCachedData } from '@/lib/cache/appCache';
 import { formatHours, formatTime, formatDate } from '@/lib/utils/formatters';
 import { 
   Clock, 
@@ -45,16 +46,26 @@ function AttendanceContent() {
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [viewMode, setViewMode] = useState<'day' | 'month'>('day');
 
-  async function loadData(dateToLoad = selectedDate, mode = viewMode) {
-    setLoading(true);
-    setError(null);
+  async function loadData(dateToLoad = selectedDate, mode = viewMode, force = false) {
+    const cacheKey = `attendance_${dateToLoad}_${mode}`;
+    if (!force) {
+      const cached = getCachedData<AttendanceResponse>(cacheKey);
+      if (cached) {
+        setData(cached);
+        setLoading(false);
+      }
+    }
+
     const res = await getAttendanceAction(dateToLoad, mode);
     setLoading(false);
 
     if (!res.success) {
-      setError(res.error || 'Failed to load attendance records.');
+      if (!data) {
+        setError(res.error || 'Failed to load attendance records.');
+      }
     } else {
       setData(res);
+      setCachedData(cacheKey, res);
     }
   }
 

@@ -118,13 +118,23 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
         
         {/* Left: Brand Logo & Navigation Tabs */}
         <div className="flex items-center gap-8">
-          <Link href="/employees" className="flex items-center gap-2.5 transition-opacity hover:opacity-90">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-600 font-bold text-white shadow-sm shadow-purple-600/30">
-              <Sparkles className="h-5 w-5" />
-            </div>
+          <Link href="/employees" className="flex items-center gap-3 transition-opacity hover:opacity-90">
+            {profile?.company?.logo_url ? (
+              <div className="flex h-9 max-w-[140px] items-center justify-center rounded-lg bg-slate-50 border border-slate-200/80 px-2 py-1 shadow-2xs overflow-hidden">
+                <img 
+                  src={profile.company.logo_url} 
+                  alt={profile.company.name || 'Company Logo'} 
+                  className="h-full w-auto max-h-7 object-contain"
+                />
+              </div>
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-600 font-bold text-white shadow-sm shadow-purple-600/30">
+                <Sparkles className="h-5 w-5" />
+              </div>
+            )}
             <div className="flex flex-col">
-              <span className="font-bold tracking-tight text-slate-900 sm:text-lg">
-                Dayflow
+              <span className="font-bold tracking-tight text-slate-900 sm:text-base leading-tight">
+                {profile?.company?.name || 'Dayflow'}
               </span>
               <span className="text-[10px] text-purple-600 font-semibold tracking-wider uppercase">HRMS</span>
             </div>

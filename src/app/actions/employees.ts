@@ -31,7 +31,7 @@ export async function getEmployeesAction(): Promise<GetEmployeesResponse> {
   // This is safe — we already verified the user is authenticated above
   const { data: currentProfile, error: profileErr } = await adminClient
     .from('profiles')
-    .select('*')
+    .select('*, company:companies(*), department:departments(name)')
     .eq('id', user.id)
     .single();
 

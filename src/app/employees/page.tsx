@@ -10,6 +10,8 @@ import { Profile } from '@/types/database.types';
 import { Button } from '@/components/ui/Button';
 import { Plus, Search, Settings, Users, AlertCircle, RefreshCw } from 'lucide-react';
 
+import { getCachedData, setCachedData } from '@/lib/cache/appCache';
+
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<EmployeeWithLiveStatus[]>([]);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
@@ -18,17 +20,29 @@ export default function EmployeesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadEmployees() {
-    setLoading(true);
-    setError(null);
+  async function loadEmployees(force = false) {
+    // 1. Instant cache retrieval for instant tab transitions (0ms latency)
+    if (!force) {
+      const cached = getCachedData<{ employees: EmployeeWithLiveStatus[]; profile: Profile | null }>('employees_page');
+      if (cached) {
+        setEmployees(cached.employees);
+        setCurrentProfile(cached.profile);
+        setLoading(false);
+      }
+    }
+
+    // 2. Background fresh revalidation
     const res = await getEmployeesAction();
     setLoading(false);
 
     if (!res.success) {
-      setError(res.error || 'Failed to load employees.');
+      if (employees.length === 0) {
+        setError(res.error || 'Failed to load employees.');
+      }
     } else {
       setEmployees(res.employees);
       setCurrentProfile(res.currentUserProfile);
+      setCachedData('employees_page', { employees: res.employees, profile: res.currentUserProfile });
     }
   }
 
@@ -101,7 +115,7 @@ export default function EmployeesPage() {
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <span>{error}</span>
               </div>
-              <Button size="sm" variant="outline" onClick={loadEmployees}>
+              <Button size="sm" variant="outline" onClick={() => loadEmployees(true)}>
                 <RefreshCw className="h-3.5 w-3.5" /> Retry
               </Button>
             </div>

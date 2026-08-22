@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Navbar from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { getProfileDataAction, FullProfileData, updateProfileHeaderAction, uploadAvatarAction } from '@/app/actions/profile';
+import { getCachedData, setCachedData } from '@/lib/cache/appCache';
 import { ResumeTab } from '@/components/profile/ResumeTab';
 import { PrivateInfoTab } from '@/components/profile/PrivateInfoTab';
 import { SalaryTab } from '@/components/profile/SalaryTab';
@@ -52,16 +53,26 @@ function ProfileContent() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function loadData() {
-    setLoading(true);
-    setError(null);
+  async function loadData(force = false) {
+    const cacheKey = `profile_${targetId || 'self'}`;
+    if (!force) {
+      const cached = getCachedData<FullProfileData>(cacheKey);
+      if (cached) {
+        setData(cached);
+        setLoading(false);
+      }
+    }
+
     const res = await getProfileDataAction(targetId);
     setLoading(false);
 
     if (!res.success || !res.data) {
-      setError(res.error || 'Failed to load profile.');
+      if (!data) {
+        setError(res.error || 'Failed to load profile.');
+      }
     } else {
       setData(res.data);
+      setCachedData(cacheKey, res.data);
     }
   }
 
