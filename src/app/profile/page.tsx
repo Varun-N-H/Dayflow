@@ -6,6 +6,7 @@ import Navbar from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { getProfileDataAction, FullProfileData, updateProfileHeaderAction, uploadAvatarAction } from '@/app/actions/profile';
 import { getCachedData, setCachedData } from '@/lib/cache/appCache';
+import { useLoading } from '@/components/layout/TopProgressBar';
 import { ResumeTab } from '@/components/profile/ResumeTab';
 import { PrivateInfoTab } from '@/components/profile/PrivateInfoTab';
 import { SalaryTab } from '@/components/profile/SalaryTab';
@@ -44,6 +45,7 @@ function ProfileContent() {
   const initialTab = searchParams.get('tab') || 'resume';
   const forceReset = searchParams.get('reset') === 'true';
 
+  const { startLoading, stopLoading } = useLoading();
   const [data, setData] = useState<FullProfileData | null>(null);
   const [activeTab, setActiveTab] = useState<string>(forceReset ? 'security' : initialTab);
   const [loading, setLoading] = useState(true);
@@ -55,24 +57,29 @@ function ProfileContent() {
 
   async function loadData(force = false) {
     const cacheKey = `profile_${targetId || 'self'}`;
-    if (!force) {
-      const cached = getCachedData<FullProfileData>(cacheKey);
-      if (cached) {
-        setData(cached);
-        setLoading(false);
-      }
+    const cached = !force ? getCachedData<FullProfileData>(cacheKey) : null;
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      startLoading();
     }
 
-    const res = await getProfileDataAction(targetId);
-    setLoading(false);
+    try {
+      const res = await getProfileDataAction(targetId);
+      setLoading(false);
 
-    if (!res.success || !res.data) {
-      if (!data) {
-        setError(res.error || 'Failed to load profile.');
+      if (!res.success || !res.data) {
+        if (!cached && !data) {
+          setError(res.error || 'Failed to load profile.');
+        }
+      } else {
+        setData(res.data);
+        setCachedData(cacheKey, res.data);
       }
-    } else {
-      setData(res.data);
-      setCachedData(cacheKey, res.data);
+    } finally {
+      stopLoading();
     }
   }
 

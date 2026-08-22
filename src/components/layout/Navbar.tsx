@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Profile } from '@/types/database.types';
 import { punchInAction, punchOutAction } from '@/app/actions/attendance';
+import { useLoading } from '@/components/layout/TopProgressBar';
 import { 
   Users, 
   Clock, 
@@ -24,6 +25,7 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const { startLoading, stopLoading } = useLoading();
 
   const [profile, setProfile] = useState<Profile | null>(initialProfile || null);
   const [isCheckedIn, setIsCheckedIn] = useState(initialIsCheckedIn);
@@ -83,6 +85,7 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
   // Handle Punch In / Punch Out via server actions
   async function handleToggleAttendance() {
     setLoadingAction(true);
+    startLoading();
     try {
       if (!isCheckedIn) {
         const res = await punchInAction();
@@ -96,14 +99,17 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
       // silently fail
     } finally {
       setLoadingAction(false);
+      stopLoading();
     }
   }
 
   // Handle Logout
   async function handleLogout() {
+    startLoading();
     await supabase.auth.signOut();
     router.push('/signin');
     router.refresh();
+    stopLoading();
   }
 
   const navTabs = [
@@ -118,7 +124,11 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
         
         {/* Left: Brand Logo & Navigation Tabs */}
         <div className="flex items-center gap-8">
-          <Link href="/employees" className="flex items-center gap-3 transition-opacity hover:opacity-90">
+          <Link 
+            href="/employees" 
+            onClick={() => { if (pathname !== '/employees') startLoading(); }}
+            className="flex items-center gap-3 transition-opacity hover:opacity-90"
+          >
             {profile?.company?.logo_url ? (
               <div className="flex h-9 max-w-[140px] items-center justify-center rounded-lg bg-slate-50 border border-slate-200/80 px-2 py-1 shadow-2xs overflow-hidden">
                 <img 
@@ -149,6 +159,7 @@ export default function Navbar({ initialProfile, initialIsCheckedIn = false }: N
                 <Link
                   key={tab.name}
                   href={tab.href}
+                  onClick={() => { if (!isActive) startLoading(); }}
                   className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all duration-150 ${
                     isActive
                       ? 'bg-purple-50 text-purple-700 font-semibold border border-purple-200/80 shadow-2xs'

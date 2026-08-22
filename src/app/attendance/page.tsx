@@ -6,6 +6,7 @@ import { Footer } from '@/components/layout/Footer';
 import { getAttendanceAction, punchInAction, punchOutAction, AttendanceResponse } from '@/app/actions/attendance';
 import { AttendanceStats } from '@/components/attendance/AttendanceStats';
 import { PayslipModal } from '@/components/payroll/PayslipModal';
+import { useLoading } from '@/components/layout/TopProgressBar';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { getCachedData, setCachedData } from '@/lib/cache/appCache';
@@ -34,6 +35,7 @@ export default function AttendancePage() {
 }
 
 function AttendanceContent() {
+  const { startLoading, stopLoading } = useLoading();
   const [data, setData] = useState<AttendanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -48,24 +50,29 @@ function AttendanceContent() {
 
   async function loadData(dateToLoad = selectedDate, mode = viewMode, force = false) {
     const cacheKey = `attendance_${dateToLoad}_${mode}`;
-    if (!force) {
-      const cached = getCachedData<AttendanceResponse>(cacheKey);
-      if (cached) {
-        setData(cached);
-        setLoading(false);
-      }
+    const cached = !force ? getCachedData<AttendanceResponse>(cacheKey) : null;
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      startLoading();
     }
 
-    const res = await getAttendanceAction(dateToLoad, mode);
-    setLoading(false);
+    try {
+      const res = await getAttendanceAction(dateToLoad, mode);
+      setLoading(false);
 
-    if (!res.success) {
-      if (!data) {
-        setError(res.error || 'Failed to load attendance records.');
+      if (!res.success) {
+        if (!cached && !data) {
+          setError(res.error || 'Failed to load attendance records.');
+        }
+      } else {
+        setData(res);
+        setCachedData(cacheKey, res);
       }
-    } else {
-      setData(res);
-      setCachedData(cacheKey, res);
+    } finally {
+      stopLoading();
     }
   }
 

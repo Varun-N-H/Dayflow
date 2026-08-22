@@ -11,8 +11,10 @@ import { Button } from '@/components/ui/Button';
 import { Plus, Search, Settings, Users, AlertCircle, RefreshCw } from 'lucide-react';
 
 import { getCachedData, setCachedData } from '@/lib/cache/appCache';
+import { useLoading } from '@/components/layout/TopProgressBar';
 
 export default function EmployeesPage() {
+  const { startLoading, stopLoading } = useLoading();
   const [employees, setEmployees] = useState<EmployeeWithLiveStatus[]>([]);
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -21,28 +23,31 @@ export default function EmployeesPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function loadEmployees(force = false) {
-    // 1. Instant cache retrieval for instant tab transitions (0ms latency)
-    if (!force) {
-      const cached = getCachedData<{ employees: EmployeeWithLiveStatus[]; profile: Profile | null }>('employees_page');
-      if (cached) {
-        setEmployees(cached.employees);
-        setCurrentProfile(cached.profile);
-        setLoading(false);
-      }
+    const cached = !force ? getCachedData<{ employees: EmployeeWithLiveStatus[]; profile: Profile | null }>('employees_page') : null;
+    if (cached) {
+      setEmployees(cached.employees);
+      setCurrentProfile(cached.profile);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      startLoading();
     }
 
-    // 2. Background fresh revalidation
-    const res = await getEmployeesAction();
-    setLoading(false);
+    try {
+      const res = await getEmployeesAction();
+      setLoading(false);
 
-    if (!res.success) {
-      if (employees.length === 0) {
-        setError(res.error || 'Failed to load employees.');
+      if (!res.success) {
+        if (!cached && employees.length === 0) {
+          setError(res.error || 'Failed to load employees.');
+        }
+      } else {
+        setEmployees(res.employees);
+        setCurrentProfile(res.currentUserProfile);
+        setCachedData('employees_page', { employees: res.employees, profile: res.currentUserProfile });
       }
-    } else {
-      setEmployees(res.employees);
-      setCurrentProfile(res.currentUserProfile);
-      setCachedData('employees_page', { employees: res.employees, profile: res.currentUserProfile });
+    } finally {
+      stopLoading();
     }
   }
 

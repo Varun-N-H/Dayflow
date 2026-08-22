@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import { TopProgressBar } from '@/components/layout/TopProgressBar';
+import { LoadingProvider } from '@/components/layout/TopProgressBar';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -23,10 +22,9 @@ export default function RootLayout({
         className="bg-slate-50 text-slate-900 min-h-screen antialiased selection:bg-purple-500 selection:text-white"
         suppressHydrationWarning
       >
-        <Suspense fallback={null}>
-          <TopProgressBar />
-        </Suspense>
-        {children}
+        <LoadingProvider>
+          {children}
+        </LoadingProvider>
       </body>
     </html>
   );

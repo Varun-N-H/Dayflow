@@ -13,6 +13,7 @@ import {
 import { AnnualCalendarGrid } from '@/components/time-off/AnnualCalendarGrid';
 import { TimeOffModal } from '@/components/modals/TimeOffModal';
 import { getCachedData, setCachedData } from '@/lib/cache/appCache';
+import { useLoading } from '@/components/layout/TopProgressBar';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate } from '@/lib/utils/formatters';
@@ -40,6 +41,7 @@ export default function TimeOffPage() {
 }
 
 function TimeOffContent() {
+  const { startLoading, stopLoading } = useLoading();
   const [data, setData] = useState<TimeOffDataResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,24 +55,29 @@ function TimeOffContent() {
 
   async function loadData(force = false) {
     const cacheKey = `time_off_${currentYear}`;
-    if (!force) {
-      const cached = getCachedData<TimeOffDataResponse>(cacheKey);
-      if (cached) {
-        setData(cached);
-        setLoading(false);
-      }
+    const cached = !force ? getCachedData<TimeOffDataResponse>(cacheKey) : null;
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      startLoading();
     }
 
-    const res = await getTimeOffDataAction(currentYear);
-    setLoading(false);
+    try {
+      const res = await getTimeOffDataAction(currentYear);
+      setLoading(false);
 
-    if (!res.success) {
-      if (!data) {
-        setError(res.error || 'Failed to load time off data.');
+      if (!res.success) {
+        if (!cached && !data) {
+          setError(res.error || 'Failed to load time off data.');
+        }
+      } else {
+        setData(res);
+        setCachedData(cacheKey, res);
       }
-    } else {
-      setData(res);
-      setCachedData(cacheKey, res);
+    } finally {
+      stopLoading();
     }
   }
 
