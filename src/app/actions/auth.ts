@@ -136,54 +136,54 @@ export async function signUpCompanyAction(formData: FormData): Promise<AuthRespo
       return { success: false, error: `Company creation failed: ${companyError?.message}` };
     }
 
-    // 3. Create Admin User in Supabase Auth (Try Public SignUp first, then Admin fallback)
+    // 3. Create Admin User in Supabase Auth (Admin API first - bypasses MX domain checks)
     let authUserId: string | null = null;
 
-    // Strategy A: Standard Supabase SignUp
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    // Strategy A: Service Role Admin CreateUser (bypasses MX domain validation & auto-confirms email)
+    const { data: adminUserData, error: adminUserError } = await adminClient.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: {
-          first_name: firstName,
-          last_name: lastName,
-          role: 'admin',
-          company_id: company.id,
-        },
+      email_confirm: true,
+      user_metadata: {
+        first_name: firstName,
+        last_name: lastName,
+        role: 'admin',
+        company_id: company.id,
       },
     });
 
-    if (signUpData?.user) {
-      authUserId = signUpData.user.id;
+    if (adminUserData?.user) {
+      authUserId = adminUserData.user.id;
     } else {
-      // Strategy B: Admin create user API fallback
-      const { data: adminUserData, error: adminUserError } = await adminClient.auth.admin.createUser({
+      // Strategy B: If user already exists in auth, authenticate them directly
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
-        email_confirm: true,
-        user_metadata: {
-          first_name: firstName,
-          last_name: lastName,
-          role: 'admin',
-          company_id: company.id,
-        },
       });
 
-      if (adminUserData?.user) {
-        authUserId = adminUserData.user.id;
+      if (signInData?.user) {
+        authUserId = signInData.user.id;
       } else {
-        // Strategy C: If user already exists in auth, attempt sign-in
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        // Strategy C: Public SignUp fallback
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            data: {
+              first_name: firstName,
+              last_name: lastName,
+              role: 'admin',
+              company_id: company.id,
+            },
+          },
         });
 
-        if (signInData?.user) {
-          authUserId = signInData.user.id;
+        if (signUpData?.user) {
+          authUserId = signUpData.user.id;
         } else {
           return {
             success: false,
-            error: `User creation failed: ${signUpError?.message || adminUserError?.message || signInError?.message || 'Database error checking email'}`,
+            error: `Registration failed: ${adminUserError?.message || signInError?.message || signUpError?.message || 'Unable to create user'}`,
           };
         }
       }
