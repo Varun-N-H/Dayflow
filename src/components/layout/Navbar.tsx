@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Profile } from '@/types/database.types';
+import { punchInAction, punchOutAction } from '@/app/actions/attendance';
 import { 
   Users, 
   Clock, 
@@ -16,15 +17,16 @@ import {
 
 interface NavbarProps {
   initialProfile?: Profile | null;
+  initialIsCheckedIn?: boolean;
 }
 
-export default function Navbar({ initialProfile }: NavbarProps) {
+export default function Navbar({ initialProfile, initialIsCheckedIn = false }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
 
   const [profile, setProfile] = useState<Profile | null>(initialProfile || null);
-  const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [isCheckedIn, setIsCheckedIn] = useState(initialIsCheckedIn);
   const [loadingAction, setLoadingAction] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -40,86 +42,54 @@ export default function Navbar({ initialProfile }: NavbarProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch current user and today's attendance status
+  // If no initialProfile, fetch profile via client (no company join to avoid RLS issues)
   useEffect(() => {
-    async function loadUserAndAttendance() {
+    if (initialProfile) return; // already have profile from server
+    async function loadProfile() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Fetch profile
         const { data: prof } = await supabase
           .from('profiles')
-          .select('*, company:companies(*)')
+          .select('*')
           .eq('id', user.id)
           .single();
 
         if (prof) setProfile(prof as Profile);
 
-        // Fetch today's attendance record
+        // Use a simple filter - no .single() which causes 406
         const today = new Date().toISOString().split('T')[0];
-        const { data: att } = await supabase
+        const { data: attRows } = await supabase
           .from('attendance_records')
-          .select('*')
+          .select('check_in, check_out')
           .eq('profile_id', user.id)
           .eq('date', today)
-          .single();
+          .limit(1);
 
-        if (att && att.check_in && !att.check_out) {
-          setIsCheckedIn(true);
-        } else {
-          setIsCheckedIn(false);
-        }
-      } catch (err) {
-        console.error('Failed to load user info:', err);
+        const att = attRows?.[0];
+        setIsCheckedIn(!!(att?.check_in && !att?.check_out));
+      } catch {
+        // Silently fail — user can still use the app
       }
     }
+    loadProfile();
+  }, []);
 
-    loadUserAndAttendance();
-  }, [supabase]);
-
-  // Handle Punch In / Punch Out
+  // Handle Punch In / Punch Out via server actions
   async function handleToggleAttendance() {
     setLoadingAction(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !profile) return;
-
-      const today = new Date().toISOString().split('T')[0];
-      const now = new Date().toISOString();
-
       if (!isCheckedIn) {
-        // Punch In
-        const { error } = await supabase
-          .from('attendance_records')
-          .upsert({
-            company_id: profile.company_id,
-            profile_id: user.id,
-            date: today,
-            check_in: now,
-            status: 'present',
-          }, { onConflict: 'profile_id,date' });
-
-        if (!error) {
-          setIsCheckedIn(true);
-        }
+        const res = await punchInAction();
+        if (res.success) setIsCheckedIn(true);
       } else {
-        // Punch Out
-        const { error } = await supabase
-          .from('attendance_records')
-          .update({
-            check_out: now,
-          })
-          .eq('profile_id', user.id)
-          .eq('date', today);
-
-        if (!error) {
-          setIsCheckedIn(false);
-        }
+        const res = await punchOutAction();
+        if (res.success) setIsCheckedIn(false);
       }
       router.refresh();
-    } catch (err) {
-      console.error('Attendance action failed:', err);
+    } catch {
+      // silently fail
     } finally {
       setLoadingAction(false);
     }
@@ -145,20 +115,12 @@ export default function Navbar({ initialProfile }: NavbarProps) {
         {/* Left: Brand Logo & Navigation Tabs */}
         <div className="flex items-center gap-8">
           <Link href="/employees" className="flex items-center gap-2.5 transition-opacity hover:opacity-90">
-            {profile?.company?.logo_url ? (
-              <img 
-                src={profile.company.logo_url} 
-                alt={profile.company.name} 
-                className="h-8 w-auto max-w-[120px] rounded object-contain"
-              />
-            ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-600 font-bold text-white shadow-sm shadow-purple-600/30">
-                <Sparkles className="h-5 w-5" />
-              </div>
-            )}
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-600 font-bold text-white shadow-sm shadow-purple-600/30">
+              <Sparkles className="h-5 w-5" />
+            </div>
             <div className="flex flex-col">
               <span className="font-bold tracking-tight text-slate-900 sm:text-lg">
-                {profile?.company?.name || 'Dayflow'}
+                Dayflow
               </span>
               <span className="text-[10px] text-purple-600 font-semibold tracking-wider uppercase">HRMS</span>
             </div>
@@ -217,13 +179,9 @@ export default function Navbar({ initialProfile }: NavbarProps) {
                 isCheckedIn
                   ? 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 shadow-2xs'
                   : 'bg-purple-600 text-white shadow-sm shadow-purple-600/30 hover:bg-purple-700'
-              }`}
+              } ${loadingAction ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
-              {isCheckedIn ? (
-                <>Check Out &rarr;</>
-              ) : (
-                <>Check IN &rarr;</>
-              )}
+              {loadingAction ? '...' : isCheckedIn ? <>Check Out &rarr;</> : <>Check IN &rarr;</>}
             </button>
           </div>
 

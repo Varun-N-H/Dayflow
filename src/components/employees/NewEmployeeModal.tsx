@@ -16,8 +16,9 @@ export function NewEmployeeModal({ isOpen, onClose, onSuccess }: NewEmployeeModa
   const [error, setError] = useState<string | null>(null);
   const [createdInfo, setCreatedInfo] = useState<{
     loginId: string;
-    temporaryPassword: string;
-    employeeName: string;
+    tempPassword: string;
+    firstName: string;
+    lastName: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -37,8 +38,9 @@ export function NewEmployeeModal({ isOpen, onClose, onSuccess }: NewEmployeeModa
     } else {
       setCreatedInfo({
         loginId: res.loginId || '',
-        temporaryPassword: res.temporaryPassword || '',
-        employeeName: res.employeeName || '',
+        tempPassword: res.tempPassword || '',
+        firstName: formData.get('firstName')?.toString() || '',
+        lastName: formData.get('lastName')?.toString() || '',
       });
       onSuccess();
     }
@@ -46,7 +48,8 @@ export function NewEmployeeModal({ isOpen, onClose, onSuccess }: NewEmployeeModa
 
   function handleCopyCredentials() {
     if (!createdInfo) return;
-    const text = `Dayflow HRMS Credentials:\nEmployee: ${createdInfo.employeeName}\nLogin ID: ${createdInfo.loginId}\nTemporary Password: ${createdInfo.temporaryPassword}\nLogin URL: ${window.location.origin}/signin`;
+    const fullName = `${createdInfo.firstName} ${createdInfo.lastName}`.trim();
+    const text = `Dayflow HRMS Credentials:\nEmployee: ${fullName}\nLogin ID: ${createdInfo.loginId}\nTemporary Password: ${createdInfo.tempPassword}\nLogin URL: ${window.location.origin}/signin`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -91,7 +94,7 @@ export function NewEmployeeModal({ isOpen, onClose, onSuccess }: NewEmployeeModa
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 font-mono text-sm">
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 font-sans text-xs">Employee:</span>
-                <span className="font-bold text-slate-900">{createdInfo.employeeName}</span>
+                <span className="font-bold text-slate-900">{createdInfo.firstName} {createdInfo.lastName}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 font-sans text-xs">Login ID:</span>
@@ -102,7 +105,7 @@ export function NewEmployeeModal({ isOpen, onClose, onSuccess }: NewEmployeeModa
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 font-sans text-xs">Temp Password:</span>
                 <span className="font-bold text-slate-900 bg-slate-200/70 px-2 py-0.5 rounded">
-                  {createdInfo.temporaryPassword}
+                  {createdInfo.tempPassword}
                 </span>
               </div>
             </div>

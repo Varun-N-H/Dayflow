@@ -26,10 +26,10 @@ export async function getEmployeesAction(): Promise<GetEmployeesResponse> {
     return { success: false, employees: [], currentUserProfile: null, error: 'Unauthorized' };
   }
 
-  // Fetch current user's profile
+  // Fetch current user's profile (no company join – avoids RLS join 500)
   const { data: currentProfile, error: profileErr } = await supabase
     .from('profiles')
-    .select('*, company:companies(*)')
+    .select('*')
     .eq('id', user.id)
     .single();
 
@@ -40,194 +40,212 @@ export async function getEmployeesAction(): Promise<GetEmployeesResponse> {
   const companyId = currentProfile.company_id;
   const today = new Date().toISOString().split('T')[0];
 
-  // 1. Fetch all profiles in company
-  const { data: allProfiles, error: allProfilesErr } = await supabase
-    .from('profiles')
-    .select('*, department:departments(*), company:companies(*)')
-    .eq('company_id', companyId)
-    .order('created_at', { ascending: true });
+  // Run all 3 queries in parallel for speed
+  const [allProfilesResult, attendanceResult, leavesResult] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('*, department:departments(name)')
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: true }),
 
-  if (allProfilesErr) {
-    return { success: false, employees: [], currentUserProfile: currentProfile as Profile, error: allProfilesErr.message };
-  }
+    supabase
+      .from('attendance_records')
+      .select('profile_id, check_in, check_out, status')
+      .eq('company_id', companyId)
+      .eq('date', today),
 
-  // 2. Fetch today's attendance records
-  const { data: attendanceList } = await supabase
-    .from('attendance_records')
-    .select('*')
-    .eq('company_id', companyId)
-    .eq('date', today);
+    supabase
+      .from('time_off_requests')
+      .select('profile_id')
+      .eq('company_id', companyId)
+      .eq('status', 'approved')
+      .lte('start_date', today)
+      .gte('end_date', today),
+  ]);
 
-  // 3. Fetch today's active approved leaves
-  const { data: activeLeaves } = await supabase
-    .from('time_off_requests')
-    .select('*')
-    .eq('company_id', companyId)
-    .eq('status', 'approved')
-    .lte('start_date', today)
-    .gte('end_date', today);
+  const allProfiles = allProfilesResult.data || [];
+  const attendanceList = attendanceResult.data || [];
+  const leavesList = leavesResult.data || [];
 
-  const attendanceMap = new Map<string, { check_in: string | null; check_out: string | null }>();
-  attendanceList?.forEach((rec) => {
-    attendanceMap.set(rec.profile_id, { check_in: rec.check_in, check_out: rec.check_out });
-  });
+  // Build lookup maps
+  const attMap = new Map(attendanceList.map((r) => [r.profile_id, r]));
+  const onLeaveSet = new Set(leavesList.map((l) => l.profile_id));
 
-  const leaveSet = new Set<string>();
-  activeLeaves?.forEach((leave) => {
-    leaveSet.add(leave.profile_id);
-  });
-
-  // Calculate live status for each employee
-  const result: EmployeeWithLiveStatus[] = (allProfiles as Profile[]).map((prof) => {
-    const att = attendanceMap.get(prof.id);
-    const isOnLeave = leaveSet.has(prof.id);
-
+  const employees: EmployeeWithLiveStatus[] = allProfiles.map((prof) => {
+    const att = attMap.get(prof.id);
     let liveStatus: 'present' | 'on_leave' | 'absent' = 'absent';
-
-    if (att && att.check_in && !att.check_out) {
-      liveStatus = 'present'; // Checked in today and active
-    } else if (isOnLeave) {
-      liveStatus = 'on_leave'; // Approved leave
-    } else if (att && att.check_in && att.check_out) {
-      liveStatus = 'present'; // Checked in and finished shift
-    } else {
-      liveStatus = 'absent'; // Not checked in, no leave
+    if (att && (att.status === 'present' || att.status === 'half_day')) {
+      liveStatus = 'present';
+    } else if (onLeaveSet.has(prof.id)) {
+      liveStatus = 'on_leave';
     }
 
     return {
-      ...prof,
+      ...(prof as Profile),
       liveStatus,
-      todayCheckIn: att?.check_in,
-      todayCheckOut: att?.check_out,
+      todayCheckIn: att?.check_in || null,
+      todayCheckOut: att?.check_out || null,
     };
   });
 
   return {
     success: true,
-    employees: result,
+    employees,
     currentUserProfile: currentProfile as Profile,
   };
 }
 
-// 2. Admin Employee Provisioning Action
-export async function createEmployeeAction(formData: FormData) {
-  const firstName = formData.get('firstName')?.toString().trim();
-  const lastName = formData.get('lastName')?.toString().trim();
-  const email = formData.get('email')?.toString().trim();
-  const phone = formData.get('phone')?.toString().trim();
-  const jobPosition = formData.get('jobPosition')?.toString().trim();
-  const departmentName = formData.get('department')?.toString().trim();
-  const monthlyWage = Number(formData.get('monthlyWage')) || 50000;
-  const workLocation = formData.get('workLocation')?.toString().trim() || 'Headquarters';
+// 2. Get Today's Attendance Status (for Navbar indicator) — lightweight single row
+export async function getTodayAttendanceAction(): Promise<{
+  isCheckedIn: boolean;
+  checkIn: string | null;
+  checkOut: string | null;
+}> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { isCheckedIn: false, checkIn: null, checkOut: null };
 
-  if (!firstName || !lastName || !email || !jobPosition) {
-    return { success: false, error: 'Please fill in all mandatory fields.' };
-  }
+  const today = new Date().toISOString().split('T')[0];
+  const { data } = await supabase
+    .from('attendance_records')
+    .select('check_in, check_out, status')
+    .eq('profile_id', user.id)
+    .eq('date', today)
+    .maybeSingle();
 
+  const isCheckedIn = !!(data?.check_in && !data?.check_out);
+  return {
+    isCheckedIn,
+    checkIn: data?.check_in || null,
+    checkOut: data?.check_out || null,
+  };
+}
+
+// 3. Create Employee (Admin Action)
+export async function createEmployeeAction(formData: FormData): Promise<{
+  success: boolean;
+  loginId?: string;
+  tempPassword?: string;
+  error?: string;
+}> {
   const supabase = await createClient();
   const adminClient = createAdminClient();
-
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return { success: false, error: 'Unauthorized.' };
-  }
 
-  // Verify Admin / HR role
-  const { data: currentProfile } = await supabase
+  if (!user) return { success: false, error: 'Unauthorized' };
+
+  // Verify the requester is an admin
+  const { data: adminProfile } = await supabase
     .from('profiles')
-    .select('company_id, role')
+    .select('role, company_id')
     .eq('id', user.id)
     .single();
 
-  if (!currentProfile || !['admin', 'hr_officer'].includes(currentProfile.role)) {
-    return { success: false, error: 'Only Administrators and HR Officers can provision employees.' };
+  if (!adminProfile || !['admin', 'hr_officer'].includes(adminProfile.role)) {
+    return { success: false, error: 'Permission denied. Admin access required.' };
   }
 
-  const companyId = currentProfile.company_id;
+  const firstName = formData.get('firstName')?.toString().trim() || '';
+  const lastName = formData.get('lastName')?.toString().trim() || '';
+  const personalEmail = formData.get('personalEmail')?.toString().trim() || '';
+  const jobPosition = formData.get('jobPosition')?.toString().trim() || '';
+  const departmentId = formData.get('departmentId')?.toString() || null;
+  const monthlyWage = Number(formData.get('monthlyWage')) || 0;
+  const workLocation = formData.get('workLocation')?.toString() || 'Headquarters';
+
+  if (!firstName || !lastName || !personalEmail) {
+    return { success: false, error: 'First name, last name, and email are required.' };
+  }
+
+  // Generate a secure random temporary password
+  const tempPassword = `Temp@${Math.floor(1000 + Math.random() * 9000)}${String.fromCharCode(65 + Math.floor(Math.random() * 26))}`;
 
   try {
-    // 1. Resolve or create department if provided
-    let departmentId: string | null = null;
-    if (departmentName) {
-      const { data: existingDept } = await adminClient
-        .from('departments')
-        .select('id')
-        .eq('company_id', companyId)
-        .ilike('name', departmentName)
-        .maybeSingle();
-
-      if (existingDept) {
-        departmentId = existingDept.id;
-      } else {
-        const { data: newDept } = await adminClient
-          .from('departments')
-          .insert({ company_id: companyId, name: departmentName })
-          .select('id')
-          .single();
-        if (newDept) departmentId = newDept.id;
-      }
-    }
-
-    // 2. Securely generate temporary password
-    const tempPassword = `Dayflow@${Math.floor(1000 + Math.random() * 9000)}`;
-
-    // 3. Create Auth User via Supabase Admin API
-    const { data: authUser, error: authErr } = await adminClient.auth.admin.createUser({
-      email,
+    // 1. Create Auth User
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+      email: personalEmail,
       password: tempPassword,
       email_confirm: true,
       user_metadata: {
         first_name: firstName,
         last_name: lastName,
         role: 'employee',
-        company_id: companyId,
+        company_id: adminProfile.company_id,
       },
     });
 
-    if (authErr || !authUser.user) {
-      return { success: false, error: authErr?.message || 'Failed to create user account.' };
+    if (authError || !authData.user) {
+      if (authError?.message?.includes('already been registered')) {
+        return { success: false, error: 'An employee with this email already exists.' };
+      }
+      return { success: false, error: `User creation failed: ${authError?.message}` };
     }
 
-    // 4. Create Profile (The DB trigger fn_generate_login_id handles the deterministic Login ID)
-    const { data: newProfile, error: profileErr } = await adminClient
+    // 2. Insert Profile — login_id auto-generated by Postgres trigger fn_generate_login_id
+    const { data: newProfile, error: profileError } = await adminClient
       .from('profiles')
       .insert({
-        id: authUser.user.id,
-        company_id: companyId,
+        id: authData.user.id,
+        company_id: adminProfile.company_id,
         role: 'employee',
         first_name: firstName,
         last_name: lastName,
-        email,
-        phone: phone || null,
+        email: personalEmail,
         job_position: jobPosition,
-        department_id: departmentId,
+        department_id: departmentId || null,
         work_location: workLocation,
         is_temporary_password: true,
       })
-      .select()
+      .select('login_id')
       .single();
 
-    if (profileErr || !newProfile) {
-      return { success: false, error: profileErr?.message || 'Failed to initialize profile.' };
+    if (profileError) {
+      return { success: false, error: `Profile creation failed: ${profileError.message}` };
     }
 
-    // 5. Update initial salary structure
+    // 3. Create initial salary structure if wage provided
     if (monthlyWage > 0) {
-      await adminClient
-        .from('salary_structures')
-        .update({ monthly_wage: monthlyWage })
-        .eq('profile_id', newProfile.id);
+      const basic = monthlyWage * 0.50;
+      const hra = basic * 0.50;
+      const standard = 4167;
+      const bonus = basic * 0.0833;
+      const lta = basic * 0.0833;
+      const fixed = monthlyWage - (basic + hra + standard + bonus + lta);
+      const empPf = basic * 0.12;
+      const emplPf = basic * 0.12;
+
+      await adminClient.from('salary_structures').upsert({
+        profile_id: authData.user.id,
+        monthly_wage: monthlyWage,
+        basic_salary: basic,
+        hra,
+        standard_allowance: standard,
+        performance_bonus: bonus,
+        leave_travel_allowance: lta,
+        fixed_allowance: Math.max(0, fixed),
+        employee_pf: empPf,
+        employer_pf: emplPf,
+        professional_tax: 200,
+      }, { onConflict: 'profile_id' });
     }
+
+    // 4. Create time off allocation for current year
+    const currentYear = new Date().getFullYear();
+    await adminClient.from('time_off_allocations').upsert({
+      company_id: adminProfile.company_id,
+      profile_id: authData.user.id,
+      year: currentYear,
+      paid_time_off_allocated: 24,
+      sick_leave_allocated: 7,
+    }, { onConflict: 'profile_id,year' });
 
     revalidatePath('/employees');
-
     return {
       success: true,
-      loginId: newProfile.login_id,
-      temporaryPassword: tempPassword,
-      employeeName: `${firstName} ${lastName}`,
+      loginId: newProfile?.login_id || 'Generating...',
+      tempPassword,
     };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Unexpected server error.' };
+    return { success: false, error: err?.message || 'Unexpected error occurred.' };
   }
 }

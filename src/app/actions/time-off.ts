@@ -37,10 +37,10 @@ export async function getTimeOffDataAction(year = new Date().getFullYear()): Pro
     };
   }
 
-  // Get current user profile
+  // Get current user profile (no company join)
   const { data: currentProfile, error: profErr } = await supabase
     .from('profiles')
-    .select('*, company:companies(*)')
+    .select('*, department:departments(name)')
     .eq('id', user.id)
     .single();
 

@@ -26,10 +26,10 @@ export async function getProfileDataAction(targetProfileId?: string): Promise<{
     return { success: false, error: 'Unauthorized' };
   }
 
-  // Get current user's profile
+  // Get current user's profile (no company join to avoid RLS issues)
   const { data: currentProfile, error: currErr } = await supabase
     .from('profiles')
-    .select('*, company:companies(*)')
+    .select('*, department:departments(name)')
     .eq('id', user.id)
     .single();
 
@@ -41,10 +41,10 @@ export async function getProfileDataAction(targetProfileId?: string): Promise<{
   const isCurrentUser = profileId === user.id;
   const isAdmin = ['admin', 'hr_officer'].includes(currentProfile.role);
 
-  // Fetch target profile
+  // Fetch target profile (no company join)
   const { data: targetProfile, error: targetErr } = await supabase
     .from('profiles')
-    .select('*, company:companies(*), department:departments(*)')
+    .select('*, department:departments(name)')
     .eq('id', profileId)
     .single();
 
