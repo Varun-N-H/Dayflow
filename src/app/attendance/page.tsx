@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Navbar from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
 import { getAttendanceAction, punchInAction, punchOutAction, AttendanceResponse } from '@/app/actions/attendance';
 import { AttendanceStats } from '@/components/attendance/AttendanceStats';
+import { PayslipModal } from '@/components/payroll/PayslipModal';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { formatHours, formatTime, formatDate } from '@/lib/utils/formatters';
@@ -18,7 +20,8 @@ import {
   LogIn, 
   User, 
   Building2,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react';
 
 export default function AttendancePage() {
@@ -35,6 +38,7 @@ function AttendanceContent() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isPayslipOpen, setIsPayslipOpen] = useState(false);
 
   // Date and View State
   const todayStr = new Date().toISOString().split('T')[0];
@@ -232,7 +236,16 @@ function AttendanceContent() {
               </div>
             </div>
 
-            <div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => setIsPayslipOpen(true)}
+                className="font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <FileText className="h-4 w-4 text-purple-600" /> View Payslip
+              </Button>
+
               {isCheckedIn ? (
                 <Button
                   variant="outline"
@@ -419,9 +432,39 @@ function AttendanceContent() {
         </main>
       </div>
 
-      <footer className="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-6 border-t border-slate-200 text-xs text-slate-500 text-center">
-        Dayflow HRMS &copy; 2026. Automated Attendance & Payroll Baseline Engine.
-      </footer>
+      <Footer />
+
+      {/* Payslip Preview Modal */}
+      {data?.currentUserProfile && (
+        <PayslipModal
+          isOpen={isPayslipOpen}
+          onClose={() => setIsPayslipOpen(false)}
+          profile={data.currentUserProfile}
+          salaryStructure={{
+            id: '',
+            profile_id: data.currentUserProfile.id,
+            wage_type: 'fixed_wage',
+            monthly_wage: 50000,
+            yearly_wage: 600000,
+            working_days_per_week: 5,
+            break_time_hours: 1.0,
+            basic_salary: 25000,
+            hra: 12500,
+            standard_allowance: 4167,
+            performance_bonus: 2082.5,
+            leave_travel_allowance: 2082.5,
+            fixed_allowance: 2918,
+            employee_pf: 3000,
+            employer_pf: 3000,
+            professional_tax: 200,
+            updated_at: new Date().toISOString(),
+          }}
+          monthName={new Date(selectedDate).toLocaleString('en-US', { month: 'long' })}
+          year={new Date(selectedDate).getFullYear()}
+          payableDays={data?.stats?.daysPresent || 20}
+          totalWorkingDays={data?.stats?.totalWorkingDays || 22}
+        />
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Navbar from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
 import { 
   getTimeOffDataAction, 
   submitTimeOffRequestAction, 
@@ -389,9 +390,7 @@ function TimeOffContent() {
         </main>
       </div>
 
-      <footer className="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-6 border-t border-slate-200 text-xs text-slate-500 text-center">
-        Dayflow HRMS &copy; 2026. Time Off & Leave Management Engine.
-      </footer>
+      <Footer />
 
       {/* Time Off Modal */}
       <TimeOffModal

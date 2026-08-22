@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
 import { EmployeeCard } from '@/components/employees/EmployeeCard';
 import { NewEmployeeModal } from '@/components/employees/NewEmployeeModal';
 import { getEmployeesAction, EmployeeWithLiveStatus } from '@/app/actions/employees';
@@ -148,16 +149,8 @@ export default function EmployeesPage() {
         </main>
       </div>
 
-      {/* Footer with Settings Link (Wireframe two.png bottom-left annotation) */}
-      <footer className="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-6 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button className="flex items-center gap-1.5 font-medium text-slate-600 hover:text-purple-600 transition-colors cursor-pointer">
-            <Settings className="h-3.5 w-3.5" />
-            <span>Settings</span>
-          </button>
-        </div>
-        <p>Dayflow HRMS &copy; 2026</p>
-      </footer>
+      {/* Reusable Footer */}
+      <Footer />
 
       {/* Provision Employee Modal */}
       <NewEmployeeModal

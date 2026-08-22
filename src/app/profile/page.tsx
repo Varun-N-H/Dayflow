@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, use } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Navbar from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
 import { getProfileDataAction, FullProfileData, updateProfileHeaderAction, uploadAvatarAction } from '@/app/actions/profile';
 import { ResumeTab } from '@/components/profile/ResumeTab';
 import { PrivateInfoTab } from '@/components/profile/PrivateInfoTab';
@@ -370,9 +371,7 @@ function ProfileContent() {
         </main>
       </div>
 
-      <footer className="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-6 border-t border-slate-200 text-xs text-slate-500 text-center">
-        Dayflow HRMS &copy; 2026. Profile & Statutory Management.
-      </footer>
+      <Footer />
     </div>
   );
 }
