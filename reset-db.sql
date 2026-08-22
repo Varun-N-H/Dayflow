@@ -1,13 +1,10 @@
 -- ==============================================================================
--- DAYFLOW HRMS — COMPLETE DATABASE RESET SCRIPT
--- Run this in Supabase SQL Editor to wipe all organizations, profiles, 
--- auth accounts, attendance, leaves, and quotas for a clean fresh start.
+-- COMPLETE SUPABASE CLEAN RESET SCRIPT (FIXES "Database error checking email")
+-- Root cause: Orphaned rows in auth.identities from previous user creation
+-- Solution: Clean all auth tables (identities, sessions, tokens, users) together
 -- ==============================================================================
 
--- 1. Disable triggers temporarily to avoid cascading trigger locks
-SET session_replication_role = 'replica';
-
--- 2. Clean out all operational HRMS data
+-- 1. Clean public schema operational tables
 TRUNCATE TABLE public.payroll_payslips CASCADE;
 TRUNCATE TABLE public.time_off_requests CASCADE;
 TRUNCATE TABLE public.time_off_allocations CASCADE;
@@ -20,18 +17,19 @@ TRUNCATE TABLE public.departments CASCADE;
 TRUNCATE TABLE public.profiles CASCADE;
 TRUNCATE TABLE public.companies CASCADE;
 
--- 3. Clean out all Supabase Auth users
+-- 2. Clean ALL Supabase Auth tables in correct order (cleans orphaned email identities!)
+DELETE FROM auth.identities;
+DELETE FROM auth.sessions;
+DELETE FROM auth.refresh_tokens;
+DELETE FROM auth.mfa_factors;
+DELETE FROM auth.mfa_challenges;
 DELETE FROM auth.users;
 
--- 4. Clean out uploaded company assets / avatars from storage (optional)
-DELETE FROM storage.objects WHERE bucket_id IN ('company-assets', 'avatars', 'documents');
-
--- 5. Re-enable standard triggers
-SET session_replication_role = 'origin';
-
--- 6. Verify clean state
-SELECT 'companies' AS table_name, COUNT(*) AS row_count FROM public.companies
+-- 3. Verify clean state
+SELECT 'companies' AS table, COUNT(*) AS count FROM public.companies
 UNION ALL
 SELECT 'profiles', COUNT(*) FROM public.profiles
 UNION ALL
-SELECT 'auth.users', COUNT(*) FROM auth.users;
+SELECT 'auth.users', COUNT(*) FROM auth.users
+UNION ALL
+SELECT 'auth.identities', COUNT(*) FROM auth.identities;
